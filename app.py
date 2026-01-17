@@ -4,6 +4,7 @@ import base64
 import json
 import os
 from datetime import datetime
+import pandas as pd
 
 # ============================================================================
 # CONFIGURATION
@@ -75,6 +76,23 @@ def image_to_base64(image_file):
     return base64.b64encode(image_file.read()).decode()
 
 # ============================================================================
+# HELPER: READ EXCEL/CSV FILES
+# ============================================================================
+
+def read_excel_csv(file):
+    """Read Excel or CSV file and convert to text"""
+    try:
+        if file.name.endswith('.csv'):
+            df = pd.read_csv(file)
+            return df.to_string()
+        elif file.name.endswith(('.xlsx', '.xls')):
+            df = pd.read_excel(file)
+            return df.to_string()
+    except Exception as e:
+        return f"Error reading file: {str(e)}"
+    return None
+
+# ============================================================================
 # HELPER: CALCULATE COSTS
 # ============================================================================
 
@@ -94,7 +112,7 @@ def estimate_problem_cost():
 # ============================================================================
 
 def solve_problem_with_ai(problem_text, category, api_key, image_data=None):
-    """Use Claude API to solve the problem"""
+    """Use Claude API to solve the problem (with optional image or file data)"""
     try:
         # Validate API key
         if not api_key:
@@ -107,7 +125,7 @@ def solve_problem_with_ai(problem_text, category, api_key, image_data=None):
         
         # Validate problem input
         if not image_data and (not problem_text or problem_text.strip() == ""):
-            st.error("❌ Please enter a problem or upload an image")
+            st.error("❌ Please enter a problem, upload an image, or upload a file")
             return None
         
         content = []
@@ -200,7 +218,7 @@ INTERPRETATION: [text]"""
             st.session_state.api_costs += cost
             st.session_state.usage_log.append({
                 "timestamp": datetime.now(),
-                "problem": problem_text[:50] if problem_text else "Image problem",
+                "problem": problem_text[:50] if problem_text else "File/Image problem",
                 "category": category,
                 "cost": cost,
                 "input_tokens": input_tokens,
@@ -224,7 +242,7 @@ INTERPRETATION: [text]"""
             if response.status_code == 400:
                 st.warning("⚠️ **Troubleshooting 400 Error:**")
                 st.write("- Verify API key is correct (starts with sk-ant-)")
-                st.write("- Check that you have API credits")
+                st.write("- Check that you have API credits (you purchased $5)")
                 st.write("- Try a simpler problem text")
                 st.write("- Refresh page and try again")
             elif response.status_code == 401:
@@ -326,6 +344,7 @@ with st.sidebar:
             student_pass = st.text_input("Password:", type="password", key="student_pass", placeholder="password")
             
             if st.button("Sign In", key="student_signin"):
+                # Fixed credentials
                 if student_email == "student@example.com" and student_pass == "password":
                     st.session_state.user_id = f"student_{student_email}"
                     st.session_state.user_name = "Student"
@@ -350,6 +369,7 @@ with st.sidebar:
         st.write(f"### Welcome, {st.session_state.user_name}! 👋")
         st.divider()
         
+        # Navigation buttons in 2-column layout
         col1, col2 = st.columns(2)
         with col1:
             if st.button("🏠 Home", use_container_width=True):
@@ -396,7 +416,7 @@ else:
         Get instant help with your statistics homework using AI!
         
         **Features:**
-        - 📚 **Homework Help** - Upload homework images → Get AI solutions
+        - 📚 **Homework Help** - Upload homework (images, Excel, CSV) → Get AI solutions
         - 📊 **Analytics** - Coming soon
         - 📈 **Resources** - Free study materials
         
@@ -408,10 +428,10 @@ else:
     elif current_page == "homework":
         # HOMEWORK HELP (PAID FEATURE)
         st.header("📚 HOMEWORK HELP")
-        st.write("Upload an image or type your problem below")
+        st.write("Upload an image, Excel file, CSV file, or type your problem below")
         st.divider()
         
-        # Get the API key
+        # Get the API key (from session or saved file)
         current_api_key = get_api_key()
         
         if not current_api_key:
@@ -428,26 +448,36 @@ else:
             
             st.write("")
             
-            # FILE UPLOAD (Images only)
-            st.write("### 📸 Upload Image (Optional)")
-            st.write("Take a photo or upload an image of your homework")
+            # FILE UPLOAD (Images, Excel, CSV)
+            st.write("### 📁 Upload File (Optional)")
+            st.write("Image, Excel, or CSV - whatever your homework is!")
             
-            uploaded_image = st.file_uploader(
-                "Choose an image:",
-                type=["jpg", "jpeg", "png"],
-                key="problem_image"
+            uploaded_file = st.file_uploader(
+                "Choose a file:",
+                type=["jpg", "jpeg", "png", "xlsx", "xls", "csv"],
+                key="problem_file"
             )
             
-            if uploaded_image:
-                st.image(uploaded_image, caption="Your homework problem", use_container_width=True)
+            if uploaded_file:
+                if uploaded_file.name.endswith(('jpg', 'jpeg', 'png')):
+                    st.image(uploaded_file, caption="Your homework problem", use_container_width=True)
+                elif uploaded_file.name.endswith(('.csv', '.xlsx', '.xls')):
+                    st.info(f"📊 File uploaded: {uploaded_file.name}")
+                    # Show preview
+                    try:
+                        df = pd.read_csv(uploaded_file) if uploaded_file.name.endswith('.csv') else pd.read_excel(uploaded_file)
+                        st.write("**File Preview:**")
+                        st.dataframe(df.head(), use_container_width=True)
+                    except:
+                        st.warning("Could not preview file")
             
             st.write("")
             st.write("### 📝 Or Type Your Problem")
-            st.write("(Optional - you can also just upload an image)")
+            st.write("(Optional - you can also just upload a file)")
             
             problem = st.text_area(
                 "Your problem:",
-                placeholder="Type your problem OR upload an image above...",
+                placeholder="Type your problem OR upload a file above...",
                 height=100
             )
             
@@ -457,8 +487,16 @@ else:
                 problem_text_final = problem.strip() if problem else ""
                 image_b64 = None
                 
-                if uploaded_image:
-                    image_b64 = image_to_base64(uploaded_image)
+                # Handle uploaded file
+                if uploaded_file:
+                    if uploaded_file.name.endswith(('jpg', 'jpeg', 'png')):
+                        # It's an image
+                        image_b64 = image_to_base64(uploaded_file)
+                    elif uploaded_file.name.endswith(('.csv', '.xlsx', '.xls')):
+                        # It's Excel/CSV
+                        file_content = read_excel_csv(uploaded_file)
+                        if file_content:
+                            problem_text_final = f"Here's a data set or problem:\n\n{file_content}\n\nPlease analyze this and help solve the homework problem."
                 
                 if problem_text_final or image_b64:
                     with st.spinner("🤔 AI is solving..."):
@@ -481,13 +519,15 @@ else:
                         st.success(f"**Answer:** {solution['answer']}")
                         st.info(f"**Interpretation:** {solution['interpretation']}")
                 else:
-                    st.error("Enter your problem or upload an image")
+                    st.error("Enter your problem, upload an image, or upload a file")
     
     elif current_page == "analytics":
+        # ANALYTICS (FREE)
         st.header("📊 Analytics")
         st.info("🔄 Coming soon - Track your learning progress with detailed analytics!")
     
     elif current_page == "resources":
+        # RESOURCES (FREE)
         st.header("📈 Resources")
         st.subheader("Free Study Materials")
         st.divider()
@@ -533,6 +573,7 @@ else:
         )
         
         if api_key:
+            # Save to file when entered
             if save_api_key(api_key):
                 st.session_state.api_key = api_key
                 st.success("✅ API key saved! (Will persist even after logout)")
@@ -554,9 +595,7 @@ else:
         
         st.subheader("📈 USAGE LOG")
         if st.session_state.usage_log:
-            # Simple display without pandas
-            st.write("**Recent API Calls:**")
-            for log in st.session_state.usage_log[-10:]:
-                st.write(f"- {log['timestamp'].strftime('%H:%M:%S')} | {log['category']} | ${log['cost']:.4f}")
+            log_df = pd.DataFrame(st.session_state.usage_log)
+            st.dataframe(log_df[["timestamp", "category", "has_image", "cost"]], use_container_width=True)
         else:
             st.info("No API calls yet")
