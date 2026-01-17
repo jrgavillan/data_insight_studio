@@ -87,7 +87,13 @@ def save_api_key(key):
         return False
 
 def load_api_key():
-    """Load API key from file"""
+    """Load API key from file or environment variable"""
+    # Try environment variable first (Render/cloud)
+    env_key = os.environ.get("ANTHROPIC_API_KEY")
+    if env_key:
+        return env_key
+    
+    # Fall back to file (local development)
     try:
         if os.path.exists(CONFIG_FILE):
             with open(CONFIG_FILE, "r") as f:
