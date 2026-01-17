@@ -19,47 +19,6 @@ st.set_page_config(page_title="Data Insight Studio", layout="wide")
 CONFIG_FILE = "api_config.txt"
 PRIVACY_POLICY_URL = "https://jrgavillan.github.io/data_insight_studio/privacy_policy.md"
 TERMS_URL = "https://jrgavillan.github.io/data_insight_studio/privacy_policy.md"
-```
-
-3. Click: **Commit changes**
-
----
-
-## 🚀 **THEN DEPLOY:**
-
-1. Go to: **https://render.com/dashboard**
-2. Click: **yourhomeworkhelper**
-3. Click: **Manual Deploy**
-4. Wait 5-10 minutes
-5. Test: Click privacy links on your app ✅
-
----
-
-## 📸 **VISUAL GUIDE:**
-```
-GitHub Repo
-    ↓
-Settings (top right tab)
-    ↓
-Pages (left sidebar)
-    ↓
-Build and deployment section
-    ↓
-Source: "Deploy from a branch"
-Branch: "main"
-Folder: "/ (root)"
-    ↓
-Click Save
-    ↓
-Green checkmark = Live! ✅
-    ↓
-Copy generated URL
-    ↓
-Update app.py with URL
-    ↓
-Manual Deploy on Render
-    ↓
-Done! 🎉
 
 API_COSTS = {
     "per_1m_input": 0.003,
@@ -206,15 +165,15 @@ def solve_problem_with_ai(problem_text, category, api_key, image_data=None, lear
     """Use Claude API to solve the problem"""
     try:
         if not api_key:
-            st.error("❌ API key is missing!")
+            st.error("API key is missing!")
             return None
         
         if not api_key.startswith("sk-ant-"):
-            st.error("❌ Invalid API key format")
+            st.error("Invalid API key format")
             return None
         
         if not image_data and (not problem_text or problem_text.strip() == ""):
-            st.error("❌ Please enter a problem, upload an image, or upload a file")
+            st.error("Please enter a problem, upload an image, or upload a file")
             return None
         
         content = []
@@ -243,12 +202,12 @@ Category: {category}
 Learning Mode: {'Yes - Provide hints first, then solution' if learning_mode else 'Standard - Full solution with explanation'}
 
 Format your response with these sections:
-📚 CONCEPT: What statistical concept applies here?
-🎯 APPROACH: What method/formula should we use?
-📊 CALCULATION: Show the work step-by-step
-✅ ANSWER: The final result
-💡 INTERPRETATION: What does this mean in plain language?
-🔍 ASSUMPTIONS: What assumptions did we make?"""
+CONCEPT: What statistical concept applies here?
+APPROACH: What method/formula should we use?
+CALCULATION: Show the work step-by-step
+ANSWER: The final result
+INTERPRETATION: What does this mean in plain language?
+ASSUMPTIONS: What assumptions did we make?"""
         
         text_prompt = f"""Solve this statistics problem step-by-step.
 
@@ -306,10 +265,10 @@ RULES:
             return solution_text
         else:
             error_msg = f"API Error {response.status_code}"
-            st.error(f"❌ {error_msg}")
+            st.error(f"Error: {error_msg}")
             return None
     except Exception as e:
-        st.error(f"❌ Error: {str(e)}")
+        st.error(f"Error: {str(e)}")
         return None
 
 # ============================================================================
@@ -338,7 +297,7 @@ if "terms_accepted" not in st.session_state:
 # ============================================================================
 
 with st.sidebar:
-    st.title("📊 Data Insight Studio")
+    st.title("Data Insight Studio")
     st.divider()
     
     if not st.session_state.user_id:
@@ -359,14 +318,14 @@ with st.sidebar:
             
             if st.button("Sign In", key="student_signin"):
                 if not terms_check:
-                    st.error("❌ Please accept the terms to continue")
+                    st.error("Please accept the terms to continue")
                 elif student_email == "student@example.com" and student_pass == "password":
                     st.session_state.user_id = f"student_{student_email}"
                     st.session_state.user_name = "Student"
                     st.session_state.terms_accepted = True
                     st.rerun()
                 else:
-                    st.error("❌ Invalid credentials")
+                    st.error("Invalid credentials")
         
         else:
             st.write("### Admin Access")
@@ -378,40 +337,40 @@ with st.sidebar:
                     st.session_state.user_name = "Admin"
                     st.rerun()
                 else:
-                    st.error("❌ Invalid password")
+                    st.error("Invalid password")
         
         st.divider()
-        st.write("### 📋 Legal")
+        st.write("### Legal")
         col1, col2 = st.columns(2)
         with col1:
-            st.markdown("[Privacy Policy](https://yourhomeworkhelper.onrender.com/privacy)")
+            st.markdown("[Privacy Policy](https://jrgavillan.github.io/data_insight_studio/privacy_policy.md)")
         with col2:
-            st.markdown("[Terms of Service](https://yourhomeworkhelper.onrender.com/terms)")
+            st.markdown("[Terms of Service](https://jrgavillan.github.io/data_insight_studio/privacy_policy.md)")
     
     else:
-        st.write(f"### Welcome, {st.session_state.user_name}! 👋")
+        st.write(f"### Welcome, {st.session_state.user_name}!")
         st.divider()
         
         col1, col2 = st.columns(2)
         with col1:
-            if st.button("🏠 Home", use_container_width=True):
+            if st.button("Home", use_container_width=True):
                 st.session_state.current_page = "home"
                 st.rerun()
-            if st.button("📊 Analytics", use_container_width=True):
+            if st.button("Analytics", use_container_width=True):
                 st.session_state.current_page = "analytics"
                 st.rerun()
         
         with col2:
-            if st.button("📚 Homework Help", use_container_width=True):
+            if st.button("Homework Help", use_container_width=True):
                 st.session_state.current_page = "homework"
                 st.rerun()
-            if st.button("📈 Resources", use_container_width=True):
+            if st.button("Resources", use_container_width=True):
                 st.session_state.current_page = "resources"
                 st.rerun()
         
         st.divider()
         
-        if st.button("🚪 Sign Out", use_container_width=True):
+        if st.button("Sign Out", use_container_width=True):
             st.session_state.user_id = None
             st.session_state.user_name = None
             st.session_state.current_page = "home"
@@ -427,61 +386,59 @@ else:
     current_page = st.session_state.current_page
     
     if current_page == "home":
-        st.title("📊 Data Insight Studio")
+        st.title("Data Insight Studio")
         st.subheader("AI-Powered Statistics Homework Helper")
         st.divider()
         
         st.write("""
-        ### Welcome to Data Insight Studio! 🎓
+        ### Welcome to Data Insight Studio!
         
         Get expert help with your statistics homework using AI!
         
         **Features:**
-        - 📚 **Homework Help** - Upload images, Excel, CSV → Get step-by-step solutions
-        - 📊 **Data Analysis** - Descriptive stats, visualizations, interpretations
-        - 📈 **Resources** - Free study materials and guides
+        - Homework Help - Upload images, Excel, CSV
+        - Data Analysis - Descriptive stats, visualizations
+        - Resources - Free study materials
         
-        **Learning-Focused Features:**
-        - ✅ Step-by-step explanations (no just answers!)
-        - ✅ Learning Mode - Hints first, then solutions
-        - ✅ Math formulas with LaTeX rendering
-        - ✅ Visualizations and intermediate outputs
-        - ✅ Plain language interpretations
+        **Learning Features:**
+        - Step-by-step explanations
+        - Learning Mode - Hints first
+        - Math formulas with LaTeX
+        - Visualizations
+        - Plain language interpretations
         
         **Pricing:** $14.99 per 90-day term
         
-        **Academic Integrity:** ⚖️ Do NOT use on proctored exams
+        **Academic Integrity:** Do NOT use on proctored exams
         
-        Click **📚 Homework Help** to get started!
+        Click Homework Help to get started!
         """)
         
         st.divider()
         
-        # Privacy & Legal Section
-        st.subheader("🔒 Privacy & Legal")
+        st.subheader("Privacy & Legal")
         col1, col2, col3 = st.columns(3)
         with col1:
-            st.markdown("[📋 Privacy Policy](https://yourhomeworkhelper.onrender.com/privacy)")
+            st.markdown("[Privacy Policy](https://jrgavillan.github.io/data_insight_studio/privacy_policy.md)")
         with col2:
-            st.markdown("[⚖️ Terms of Service](https://yourhomeworkhelper.onrender.com/terms)")
+            st.markdown("[Terms of Service](https://jrgavillan.github.io/data_insight_studio/privacy_policy.md)")
         with col3:
-            st.markdown("[📧 Contact Us](mailto:privacy@datainsightstudio.com)")
+            st.markdown("[Contact Us](mailto:privacy@datainsightstudio.com)")
         
-        st.info("🔒 We process and delete your uploads. We do not store them or use them for training.")
+        st.info("We process and delete your uploads. We do not store them or use them for training.")
     
     elif current_page == "homework":
-        st.header("📚 HOMEWORK HELP")
+        st.header("HOMEWORK HELP")
         st.write("Upload an image, Excel file, CSV file, or type your problem below")
         st.divider()
         
         current_api_key = get_api_key()
         
         if not current_api_key:
-            st.warning("⚠️ System not configured yet. Please contact support.")
+            st.warning("System not configured yet. Please contact support.")
             st.info("Admin needs to configure API key before homework help is available.")
         else:
-            # Learning mode toggle
-            learning_mode = st.checkbox("🎯 Learning Mode (hints first, then solution)", value=False)
+            learning_mode = st.checkbox("Learning Mode (hints first, then solution)", value=False)
             if learning_mode:
                 st.info("In Learning Mode, you'll get hints first to help you work through the problem yourself!")
             
@@ -495,8 +452,7 @@ else:
             
             st.write("")
             
-            # FILE UPLOAD
-            st.write("### 📁 Upload File (Optional)")
+            st.write("### Upload File (Optional)")
             st.write("Image, Excel, or CSV - whatever your homework is!")
             
             uploaded_file = st.file_uploader(
@@ -512,37 +468,34 @@ else:
                 if uploaded_file.name.endswith(('jpg', 'jpeg', 'png')):
                     st.image(uploaded_file, caption="Your homework problem", use_container_width=True)
                 elif uploaded_file.name.endswith(('.csv', '.xlsx', '.xls')):
-                    st.info(f"📊 File uploaded: {uploaded_file.name}")
+                    st.info(f"File uploaded: {uploaded_file.name}")
                     df = read_excel_csv(uploaded_file)
                     
                     if df is not None:
                         st.write("**File Preview:**")
                         st.dataframe(df.head(), use_container_width=True)
                         
-                        # Data analysis mode
-                        data_analysis_mode = st.checkbox("📊 Analyze this data")
+                        data_analysis_mode = st.checkbox("Analyze this data")
                         
                         if data_analysis_mode:
-                            st.write("### 📈 Quick Analysis")
+                            st.write("### Quick Analysis")
                             
                             numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
                             
                             if numeric_cols:
                                 col_to_analyze = st.selectbox("Select column to analyze:", numeric_cols)
                                 
-                                # Descriptive stats
                                 st.write("**Descriptive Statistics:**")
                                 stats_dict = calculate_descriptive_stats(df, col_to_analyze)
                                 stats_df = pd.DataFrame(list(stats_dict.items()), columns=['Statistic', 'Value'])
                                 st.dataframe(stats_df, use_container_width=True)
                                 
-                                # Visualizations
                                 st.write("**Visualizations:**")
                                 fig = create_visualizations(df, col_to_analyze)
                                 st.pyplot(fig)
             
             st.write("")
-            st.write("### 📝 Or Type Your Problem")
+            st.write("### Or Type Your Problem")
             st.write("(Optional - you can also just upload a file)")
             
             problem = st.text_area(
@@ -553,10 +506,9 @@ else:
             
             st.write("")
             
-            # Academic integrity warning
-            st.warning("⚠️ **REMINDER:** Do NOT use this on proctored exams. This is for learning and homework preparation only.")
+            st.warning("REMINDER: Do NOT use this on proctored exams. This is for learning and homework preparation only.")
             
-            if st.button("🔍 SOLVE THIS & LEARN", use_container_width=True):
+            if st.button("SOLVE THIS & LEARN", use_container_width=True):
                 problem_text_final = problem.strip() if problem else ""
                 image_b64 = None
                 
@@ -568,7 +520,7 @@ else:
                             problem_text_final = f"Analyze this data file:\n\n{df.to_string()}\n\n{problem_text_final}"
                 
                 if problem_text_final or image_b64:
-                    with st.spinner("🤔 AI is solving and explaining..."):
+                    with st.spinner("AI is solving and explaining..."):
                         solution = solve_problem_with_ai(
                             problem_text_final,
                             category,
@@ -579,7 +531,7 @@ else:
                     
                     if solution:
                         st.divider()
-                        st.subheader("✅ STEP-BY-STEP SOLUTION")
+                        st.subheader("STEP-BY-STEP SOLUTION")
                         st.markdown(solution)
                         
                         st.markdown("*This solution uses LaTeX notation for mathematical formulas.*")
@@ -587,11 +539,11 @@ else:
                     st.error("Enter your problem or upload a file")
     
     elif current_page == "analytics":
-        st.header("📊 Analytics")
-        st.info("🔄 Coming soon - Track your learning progress with detailed analytics!")
+        st.header("Analytics")
+        st.info("Coming soon - Track your learning progress!")
     
     elif current_page == "resources":
-        st.header("📈 Resources")
+        st.header("Resources")
         st.subheader("Free Study Materials")
         st.divider()
         
@@ -612,7 +564,6 @@ else:
             st.write("- Introduction to Statistics")
             st.write("- Probability Basics")
             st.write("- Hypothesis Testing 101")
-            st.write("More guides coming soon...")
         
         with tab3:
             st.write("**Video Tutorials:**")
@@ -621,21 +572,21 @@ else:
             st.write("- Regression Analysis Guide")
         
         with tab4:
-            st.write("**Frequently Asked Questions:**")
+            st.write("**FAQ:**")
             st.write("**Q: Will this help me cheat?**")
-            st.write("A: No - we focus on LEARNING, not answers. All solutions show steps and reasoning.")
+            st.write("A: No - we focus on LEARNING, not answers.")
             st.write("**Q: Can I use this on exams?**")
-            st.write("A: NO - Do not use on proctored exams. Violates academic integrity.")
+            st.write("A: NO - Do not use on proctored exams.")
             st.write("**Q: Is my data safe?**")
-            st.write("A: Yes - we process and delete uploads immediately. No storage or training use.")
+            st.write("A: Yes - we delete uploads immediately.")
     
     # ADMIN DASHBOARD
     if st.session_state.user_id == "admin":
         st.divider()
-        st.header("📊 ADMIN DASHBOARD")
+        st.header("ADMIN DASHBOARD")
         st.divider()
         
-        st.subheader("🔑 API Configuration")
+        st.subheader("API Configuration")
         api_key = st.text_input(
             "Paste your Claude API key:",
             type="password",
@@ -647,13 +598,12 @@ else:
         if api_key:
             if save_api_key(api_key):
                 st.session_state.api_key = api_key
-                st.success("✅ API key saved!")
+                st.success("API key saved!")
             else:
-                st.error("❌ Could not save API key")
+                st.error("Could not save API key")
         
         st.divider()
         
-        # Analytics
         col1, col2, col3, col4 = st.columns(4)
         col1.metric("Total API Calls", st.session_state.api_calls)
         col2.metric("Total API Cost", f"${st.session_state.api_costs:.2f}")
@@ -664,7 +614,7 @@ else:
         
         st.divider()
         
-        st.subheader("📈 USAGE LOG")
+        st.subheader("USAGE LOG")
         if st.session_state.usage_log:
             log_df = pd.DataFrame(st.session_state.usage_log)
             st.dataframe(log_df[["timestamp", "category", "learning_mode", "has_image", "cost"]], use_container_width=True)
