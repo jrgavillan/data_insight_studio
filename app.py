@@ -7,21 +7,17 @@ from datetime import datetime
 import pandas as pd
 import numpy as np
 from scipy import stats
-from scipy.stats import ttest_ind, ttest_rel, f_oneway, chi2_contingency, linregress, norm
+from scipy.stats import ttest_ind, ttest_rel, f_oneway, chi2_contingency, linregress, norm, shapiro, anderson, kstest, boxcox, yeojohnson
 from sklearn.linear_model import LinearRegression, LogisticRegression
 from sklearn.ensemble import RandomForestRegressor, RandomForestClassifier, GradientBoostingRegressor
-from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import StandardScaler, PowerTransformer, QuantileTransformer
 from sklearn.model_selection import train_test_split
-from sklearn.metrics import mean_squared_error, r2_score, accuracy_score, confusion_matrix, classification_report
+from sklearn.metrics import mean_squared_error, r2_score, accuracy_score
 from sklearn.cluster import KMeans
 import matplotlib.pyplot as plt
 import seaborn as sns
 import warnings
 warnings.filterwarnings('ignore')
-
-# ============================================================================
-# CONFIGURATION
-# ============================================================================
 
 st.set_page_config(page_title="Data Insight Studio", layout="wide", initial_sidebar_state="expanded")
 
@@ -29,19 +25,9 @@ CONFIG_FILE = "api_config.txt"
 PRIVACY_POLICY_URL = "https://jrgavillan.github.io/data_insight_studio/privacy_policy.md"
 TERMS_URL = "https://jrgavillan.github.io/data_insight_studio/privacy_policy.md"
 
-API_COSTS = {
-    "per_1m_input": 0.003,
-    "per_1m_output": 0.015,
-    "avg_input_tokens": 500,
-    "avg_output_tokens": 300
-}
+API_COSTS = {"per_1m_input": 0.003, "per_1m_output": 0.015, "avg_input_tokens": 500, "avg_output_tokens": 300}
+PRICING = {"per_term": 14.99, "term_days": 90}
 
-PRICING = {
-    "per_term": 14.99,
-    "term_days": 90
-}
-
-# All available analysis categories
 ANALYSIS_CATEGORIES = {
     "📊 DESCRIPTIVE STATISTICS": "Descriptive Statistics",
     "📈 HYPOTHESIS TESTING": "Hypothesis Testing",
@@ -51,16 +37,15 @@ ANALYSIS_CATEGORIES = {
     "🔔 PROBABILITY DISTRIBUTIONS": "Probability",
     "🧪 T-TESTS": "T-Tests",
     "🎯 CHI-SQUARE TEST": "Chi-Square",
+    "✨ NORMALITY TESTING & TRANSFORMATIONS": "Normality Testing",
     "🤖 MACHINE LEARNING": "Machine Learning",
     "🔮 PREDICTIVE MODELING": "Predictive Modeling",
     "📊 CLUSTERING ANALYSIS": "Clustering",
-    "📈 TIME SERIES": "Time Series",
-    "🎨 DATA VISUALIZATION": "Data Visualization",
     "📋 CORRELATION ANALYSIS": "Correlation",
 }
 
 # ============================================================================
-# PERSISTENT API KEY STORAGE
+# API KEY MANAGEMENT
 # ============================================================================
 
 def save_api_key(key):
@@ -93,6 +78,277 @@ def get_api_key():
     return None
 
 # ============================================================================
+# NORMALITY TESTING & TRANSFORMATIONS
+# ============================================================================
+
+def test_normality(data):
+    """Comprehensive normality testing"""
+    data_clean = data.dropna()
+    
+    # Shapiro-Wilk Test
+    shapiro_stat, shapiro_p = shapiro(data_clean)
+    
+    # Anderson-Darling Test
+    anderson_result = anderson(data_clean)
+    anderson_stat = anderson_result.statistic
+    
+    # Kolmogorov-Smirnov Test
+    ks_stat, ks_p = kstest(data_clean, 'norm', args=(data_clean.mean(), data_clean.std()))
+    
+    # Skewness and Kurtosis
+    skewness = stats.skew(data_clean)
+    kurtosis = stats.kurtosis(data_clean)
+    
+    results = {
+        "Shapiro-Wilk Statistic": shapiro_stat,
+        "Shapiro-Wilk p-value": shapiro_p,
+        "Anderson-Darling Statistic": anderson_stat,
+        "K-S Statistic": ks_stat,
+        "K-S p-value": ks_p,
+        "Skewness": skewness,
+        "Kurtosis": kurtosis,
+        "Normal Distribution": "Yes (p > 0.05)" if shapiro_p > 0.05 else "No (p < 0.05)"
+    }
+    
+    return results
+
+def apply_transformation(data, method):
+    """Apply various transformations to normalize data"""
+    data_clean = data.dropna()
+    transformed_data = None
+    explanation = ""
+    
+    if method == "Log Transformation":
+        # Only works with positive values
+        if (data_clean > 0).all():
+            transformed_data = np.log(data_clean)
+            explanation = "Log transformation compresses right-skewed data. Works only with positive values. Good for multiplicative relationships."
+        else:
+            st.warning("Log transformation requires all positive values!")
+            return None, ""
+    
+    elif method == "Square Root Transformation":
+        if (data_clean >= 0).all():
+            transformed_data = np.sqrt(data_clean)
+            explanation = "Square root transformation is less aggressive than log. Good for moderate skewness and count data."
+        else:
+            st.warning("Square root transformation requires non-negative values!")
+            return None, ""
+    
+    elif method == "Box-Cox Transformation":
+        if (data_clean > 0).all():
+            try:
+                transformed_data, lambda_param = boxcox(data_clean)
+                explanation = f"Box-Cox transformation optimally transforms data (λ={lambda_param:.4f}). Automatically finds best transformation parameter."
+            except:
+                st.warning("Box-Cox transformation failed!")
+                return None, ""
+        else:
+            st.warning("Box-Cox requires positive values!")
+            return None, ""
+    
+    elif method == "Yeo-Johnson Transformation":
+        try:
+            transformed_data, lambda_param = yeojohnson(data_clean)
+            explanation = f"Yeo-Johnson transformation (λ={lambda_param:.4f}). Works with any values including negative/zero. More flexible than Box-Cox."
+        except:
+            st.warning("Yeo-Johnson transformation failed!")
+            return None, ""
+    
+    elif method == "Z-Score Standardization":
+        mean = data_clean.mean()
+        std = data_clean.std()
+        transformed_data = (data_clean - mean) / std
+        explanation = "Z-score standardization centers data (mean=0) and scales by std dev (std=1). Preserves distribution shape."
+    
+    elif method == "Min-Max Normalization":
+        min_val = data_clean.min()
+        max_val = data_clean.max()
+        transformed_data = (data_clean - min_val) / (max_val - min_val)
+        explanation = "Min-Max scaling transforms data to [0,1] range. Preserves relationships and distribution shape."
+    
+    return transformed_data, explanation
+
+def analyze_normality_testing(df):
+    """Full normality testing and transformation analysis"""
+    st.write("### Normality Testing & Transformations Analysis")
+    
+    numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+    
+    if len(numeric_cols) < 1:
+        st.warning("Need at least 1 numeric column")
+        return None
+    
+    column = st.selectbox("Select Column to Analyze:", numeric_cols, key="norm_col")
+    data = df[column].dropna()
+    
+    # ===== NORMALITY TESTING =====
+    st.write("#### 1️⃣ NORMALITY TESTING")
+    
+    normality_results = test_normality(data)
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        st.write("**Test Results:**")
+        results_df = pd.DataFrame(list(normality_results.items()), columns=['Test', 'Result'])
+        st.dataframe(results_df, use_container_width=True)
+    
+    with col2:
+        st.write("**Interpretation:**")
+        if normality_results["Shapiro-Wilk p-value"] > 0.05:
+            st.success("✅ Data appears normally distributed (p > 0.05)")
+        else:
+            st.error("❌ Data is NOT normally distributed (p < 0.05)")
+        
+        if abs(normality_results["Skewness"]) > 2:
+            st.warning(f"⚠️ High skewness ({normality_results['Skewness']:.2f}) - transformation recommended")
+        if abs(normality_results["Kurtosis"]) > 3:
+            st.warning(f"⚠️ High kurtosis ({normality_results['Kurtosis']:.2f}) - heavy/light tails")
+    
+    # ===== VISUALIZATIONS =====
+    st.write("#### 2️⃣ ORIGINAL DATA VISUALIZATION")
+    
+    fig, axes = plt.subplots(2, 2, figsize=(12, 10))
+    
+    # Histogram
+    axes[0, 0].hist(data, bins=30, edgecolor='black', alpha=0.7, density=True)
+    mu, sigma = norm.fit(data)
+    x = np.linspace(data.min(), data.max(), 100)
+    axes[0, 0].plot(x, norm.pdf(x, mu, sigma), 'r-', linewidth=2, label='Normal Fit')
+    axes[0, 0].set_title('Histogram with Normal Curve')
+    axes[0, 0].legend()
+    
+    # Q-Q Plot
+    stats.probplot(data, dist="norm", plot=axes[0, 1])
+    axes[0, 1].set_title('Q-Q Plot')
+    
+    # Box Plot
+    axes[1, 0].boxplot(data)
+    axes[1, 0].set_title('Box Plot')
+    axes[1, 0].set_ylabel(column)
+    
+    # Density Plot
+    data.plot(kind='density', ax=axes[1, 1])
+    axes[1, 1].set_title('Density Plot')
+    
+    plt.tight_layout()
+    st.pyplot(fig)
+    
+    # ===== TRANSFORMATIONS =====
+    st.write("#### 3️⃣ DATA TRANSFORMATIONS")
+    
+    transformation_method = st.selectbox(
+        "Choose Transformation Method:",
+        ["Log Transformation", "Square Root Transformation", "Box-Cox Transformation", 
+         "Yeo-Johnson Transformation", "Z-Score Standardization", "Min-Max Normalization"],
+        key="transform_method"
+    )
+    
+    transformed_data, explanation = apply_transformation(data, transformation_method)
+    
+    if transformed_data is not None:
+        st.write(f"**Why {transformation_method}?**")
+        st.info(explanation)
+        
+        # ===== AFTER TRANSFORMATION =====
+        st.write("#### 4️⃣ TRANSFORMED DATA ANALYSIS")
+        
+        transformed_results = test_normality(pd.Series(transformed_data))
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            st.write("**Transformed Data Tests:**")
+            trans_df = pd.DataFrame(list(transformed_results.items()), columns=['Test', 'Result'])
+            st.dataframe(trans_df, use_container_width=True)
+        
+        with col2:
+            st.write("**Improvement Check:**")
+            if transformed_results["Shapiro-Wilk p-value"] > normality_results["Shapiro-Wilk p-value"]:
+                improvement = ((transformed_results["Shapiro-Wilk p-value"] - normality_results["Shapiro-Wilk p-value"]) / 
+                              normality_results["Shapiro-Wilk p-value"] * 100)
+                st.success(f"✅ Improved by {improvement:.1f}%")
+            else:
+                st.info("Transformation didn't significantly improve normality")
+        
+        # ===== BEFORE/AFTER VISUALIZATION =====
+        st.write("#### 5️⃣ BEFORE & AFTER COMPARISON")
+        
+        fig, axes = plt.subplots(2, 3, figsize=(15, 10))
+        
+        # Original
+        axes[0, 0].hist(data, bins=30, edgecolor='black', alpha=0.7)
+        axes[0, 0].set_title('Original: Histogram')
+        axes[0, 0].set_ylabel('Frequency')
+        
+        stats.probplot(data, dist="norm", plot=axes[0, 1])
+        axes[0, 1].set_title('Original: Q-Q Plot')
+        
+        data.plot(kind='density', ax=axes[0, 2])
+        axes[0, 2].set_title('Original: Density')
+        
+        # Transformed
+        axes[1, 0].hist(transformed_data, bins=30, edgecolor='black', alpha=0.7)
+        axes[1, 0].set_title(f'Transformed: Histogram')
+        axes[1, 0].set_ylabel('Frequency')
+        
+        stats.probplot(pd.Series(transformed_data), dist="norm", plot=axes[1, 1])
+        axes[1, 1].set_title('Transformed: Q-Q Plot')
+        
+        pd.Series(transformed_data).plot(kind='density', ax=axes[1, 2])
+        axes[1, 2].set_title('Transformed: Density')
+        
+        plt.tight_layout()
+        st.pyplot(fig)
+        
+        # ===== SAMPLING FEATURE =====
+        st.write("#### 6️⃣ SAMPLING FOR NORMALITY")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            apply_sampling = st.checkbox("Apply sampling to make data approximately normal?")
+        with col2:
+            sample_size = st.slider("Sample Size (%):", 10, 100, 100, key="sample_size")
+        
+        if apply_sampling and sample_size < 100:
+            sample_indices = np.random.choice(len(transformed_data), 
+                                             size=int(len(transformed_data) * sample_size / 100), 
+                                             replace=False)
+            sampled_data = transformed_data[sample_indices]
+            
+            sampled_results = test_normality(pd.Series(sampled_data))
+            
+            st.write(f"**Sampled Data ({sample_size}%) Normality Test:**")
+            sampled_df = pd.DataFrame(list(sampled_results.items()), columns=['Test', 'Result'])
+            st.dataframe(sampled_df, use_container_width=True)
+            
+            if sampled_results["Shapiro-Wilk p-value"] > 0.05:
+                st.success("✅ Sampled data is approximately normally distributed!")
+            else:
+                st.info("Sampled data still shows deviation from normality")
+            
+            # Create sampled dataset
+            updated_df = df.copy()
+            updated_df[column] = np.nan
+            updated_df.loc[df.index[sample_indices], column] = sampled_data
+            updated_df = updated_df.dropna()
+            
+            st.write("**Updated Dataset (Sampled):**")
+            st.dataframe(updated_df.head(10), use_container_width=True)
+            st.download_button(
+                label="Download Sampled Dataset",
+                data=updated_df.to_csv(index=False),
+                file_name=f"sampled_data_{column}.csv",
+                mime="text/csv"
+            )
+            
+            return str(sampled_results)
+        
+        return str(transformed_results)
+    
+    return None
+
+# ============================================================================
 # HELPER FUNCTIONS
 # ============================================================================
 
@@ -102,11 +358,9 @@ def image_to_base64(image_file):
 def read_excel_csv(file):
     try:
         if file.name.endswith('.csv'):
-            df = pd.read_csv(file)
-            return df
+            return pd.read_csv(file)
         elif file.name.endswith(('.xlsx', '.xls')):
-            df = pd.read_excel(file)
-            return df
+            return pd.read_excel(file)
     except Exception as e:
         st.error(f"Error reading file: {str(e)}")
         return None
@@ -147,52 +401,6 @@ def create_visualizations(df, column):
     plt.tight_layout()
     return fig
 
-def analyze_hypothesis_testing(df):
-    st.write("### Hypothesis Testing Analysis")
-    numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
-    
-    if len(numeric_cols) < 1:
-        st.warning("Need at least 1 numeric column")
-        return None
-    
-    col1, col2 = st.columns(2)
-    with col1:
-        test_type = st.selectbox("Test Type", ["One-sample t-test", "Two-sample t-test", "Chi-square"])
-    
-    results = {}
-    
-    if test_type == "One-sample t-test":
-        col = st.selectbox("Select column", numeric_cols, key="hyp_col")
-        null_mean = st.number_input("Null hypothesis mean", value=0.0)
-        t_stat, p_value = stats.ttest_1samp(df[col].dropna(), null_mean)
-        results = {
-            "Test": "One-sample t-test",
-            "Null Mean": null_mean,
-            "t-statistic": t_stat,
-            "p-value": p_value,
-            "Significant": "Yes" if p_value < 0.05 else "No"
-        }
-    elif test_type == "Two-sample t-test":
-        if len(numeric_cols) >= 2:
-            col1_select = st.selectbox("Column 1", numeric_cols, key="col1")
-            col2_select = st.selectbox("Column 2", numeric_cols, key="col2", index=1)
-            t_stat, p_value = ttest_ind(df[col1_select].dropna(), df[col2_select].dropna())
-            results = {
-                "Test": "Two-sample t-test",
-                "Column 1": col1_select,
-                "Column 2": col2_select,
-                "t-statistic": t_stat,
-                "p-value": p_value,
-                "Significant": "Yes" if p_value < 0.05 else "No"
-            }
-    
-    if results:
-        st.write("**Results:**")
-        results_df = pd.DataFrame(list(results.items()), columns=['Metric', 'Value'])
-        st.dataframe(results_df, use_container_width=True)
-        return str(results)
-    return None
-
 def analyze_regression(df):
     st.write("### Regression Analysis")
     numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
@@ -219,25 +427,20 @@ def analyze_regression(df):
     residuals = y - y_pred
     rss = np.sum(residuals**2)
     mse = rss / (len(y) - 2)
-    se_slope = np.sqrt(mse / np.sum((X - X.mean())**2))
-    t_stat = slope / se_slope
-    p_value = 2 * (1 - stats.t.cdf(abs(t_stat), len(y) - 2))
     
     results = {
         "Equation": f"Y = {intercept:.4f} + {slope:.4f}*X",
         "R-squared": r_squared,
         "Slope": slope,
         "Intercept": intercept,
-        "p-value (slope)": p_value,
-        "Significant": "Yes" if p_value < 0.05 else "No"
     }
     
-    st.write("**Regression Results:**")
+    st.write("**Results:**")
     results_df = pd.DataFrame(list(results.items()), columns=['Metric', 'Value'])
     st.dataframe(results_df, use_container_width=True)
     
     fig, ax = plt.subplots(figsize=(10, 6))
-    ax.scatter(X, y, alpha=0.6, label='Data')
+    ax.scatter(X, y, alpha=0.6)
     X_line = np.linspace(X.min(), X.max(), 100).reshape(-1, 1)
     y_line = model.predict(X_line)
     ax.plot(X_line, y_line, 'r-', label=f'Fit: Y = {intercept:.2f} + {slope:.2f}*X')
@@ -245,207 +448,6 @@ def analyze_regression(df):
     ax.set_ylabel(y_col)
     ax.set_title('Linear Regression')
     ax.legend()
-    st.pyplot(fig)
-    
-    return str(results)
-
-def analyze_machine_learning(df):
-    st.write("### Machine Learning Analysis")
-    numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
-    
-    if len(numeric_cols) < 2:
-        st.warning("Need at least 2 numeric columns")
-        return None
-    
-    col1, col2 = st.columns(2)
-    with col1:
-        ml_type = st.selectbox("ML Algorithm", 
-            ["Random Forest Regression", "Random Forest Classification", 
-             "Gradient Boosting", "Support Vector Machine"])
-    
-    with col2:
-        target_col = st.selectbox("Target Variable (Y)", numeric_cols, key="ml_target")
-    
-    # Feature selection
-    feature_cols = [col for col in numeric_cols if col != target_col]
-    if not feature_cols:
-        st.warning("Need at least 2 columns")
-        return None
-    
-    X = df[feature_cols].fillna(df[feature_cols].mean())
-    y = df[target_col].fillna(df[target_col].mean())
-    
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
-    
-    if ml_type == "Random Forest Regression":
-        model = RandomForestRegressor(n_estimators=100, random_state=42)
-        model.fit(X_train, y_train)
-        y_pred = model.predict(X_test)
-        mse = mean_squared_error(y_test, y_pred)
-        r2 = r2_score(y_test, y_pred)
-        
-        results = {
-            "Algorithm": "Random Forest Regression",
-            "R² Score": r2,
-            "MSE": mse,
-            "RMSE": np.sqrt(mse),
-            "Training Samples": len(X_train),
-            "Test Samples": len(X_test)
-        }
-        
-        st.write("**Model Performance:**")
-        results_df = pd.DataFrame(list(results.items()), columns=['Metric', 'Value'])
-        st.dataframe(results_df, use_container_width=True)
-        
-        # Feature importance
-        importances = model.feature_importances_
-        fig, ax = plt.subplots(figsize=(10, 6))
-        ax.barh(feature_cols, importances)
-        ax.set_xlabel('Importance')
-        ax.set_title('Feature Importance - Random Forest')
-        st.pyplot(fig)
-        
-        return str(results)
-    
-    return None
-
-def analyze_predictive_modeling(df):
-    st.write("### Predictive Modeling")
-    numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
-    
-    if len(numeric_cols) < 2:
-        st.warning("Need at least 2 numeric columns")
-        return None
-    
-    target_col = st.selectbox("Target Variable", numeric_cols, key="pred_target")
-    feature_cols = [col for col in numeric_cols if col != target_col]
-    
-    X = df[feature_cols].fillna(df[feature_cols].mean())
-    y = df[target_col].fillna(df[target_col].mean())
-    
-    # Scale features
-    scaler = StandardScaler()
-    X_scaled = scaler.fit_transform(X)
-    
-    X_train, X_test, y_train, y_test = train_test_split(X_scaled, y, test_size=0.2, random_state=42)
-    
-    model = GradientBoostingRegressor(n_estimators=100, random_state=42)
-    model.fit(X_train, y_train)
-    
-    y_pred_train = model.predict(X_train)
-    y_pred_test = model.predict(X_test)
-    
-    train_r2 = r2_score(y_train, y_pred_train)
-    test_r2 = r2_score(y_test, y_pred_test)
-    train_rmse = np.sqrt(mean_squared_error(y_train, y_pred_train))
-    test_rmse = np.sqrt(mean_squared_error(y_test, y_pred_test))
-    
-    results = {
-        "Train R²": train_r2,
-        "Test R²": test_r2,
-        "Train RMSE": train_rmse,
-        "Test RMSE": test_rmse,
-        "Overfitting": "Yes" if train_r2 - test_r2 > 0.1 else "No"
-    }
-    
-    st.write("**Predictive Model Performance:**")
-    results_df = pd.DataFrame(list(results.items()), columns=['Metric', 'Value'])
-    st.dataframe(results_df, use_container_width=True)
-    
-    # Prediction vs Actual
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5))
-    
-    ax1.scatter(y_train, y_pred_train, alpha=0.5, label='Training')
-    ax1.scatter(y_test, y_pred_test, alpha=0.5, label='Testing')
-    ax1.plot([y.min(), y.max()], [y.min(), y.max()], 'r--', lw=2)
-    ax1.set_xlabel('Actual Values')
-    ax1.set_ylabel('Predicted Values')
-    ax1.set_title('Predictions vs Actual')
-    ax1.legend()
-    
-    residuals = y_test - y_pred_test
-    ax2.scatter(y_pred_test, residuals, alpha=0.5)
-    ax2.axhline(y=0, color='r', linestyle='--')
-    ax2.set_xlabel('Predicted Values')
-    ax2.set_ylabel('Residuals')
-    ax2.set_title('Residual Plot')
-    
-    st.pyplot(fig)
-    return str(results)
-
-def analyze_clustering(df):
-    st.write("### Clustering Analysis (K-Means)")
-    numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
-    
-    if len(numeric_cols) < 2:
-        st.warning("Need at least 2 numeric columns")
-        return None
-    
-    n_clusters = st.slider("Number of Clusters", 2, 10, 3)
-    
-    X = df[numeric_cols].fillna(df[numeric_cols].mean())
-    scaler = StandardScaler()
-    X_scaled = scaler.fit_transform(X)
-    
-    kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
-    clusters = kmeans.fit_predict(X_scaled)
-    
-    inertia = kmeans.inertia_
-    
-    results = {
-        "Number of Clusters": n_clusters,
-        "Inertia": inertia,
-        "Samples": len(df)
-    }
-    
-    st.write("**Clustering Results:**")
-    results_df = pd.DataFrame(list(results.items()), columns=['Metric', 'Value'])
-    st.dataframe(results_df, use_container_width=True)
-    
-    # Visualization
-    if len(numeric_cols) >= 2:
-        fig, ax = plt.subplots(figsize=(10, 6))
-        scatter = ax.scatter(X[numeric_cols[0]], X[numeric_cols[1]], c=clusters, cmap='viridis', s=50)
-        ax.scatter(X.iloc[kmeans.cluster_centers_[:, 0]], 
-                   X.iloc[kmeans.cluster_centers_[:, 1]], 
-                   c='red', s=200, alpha=0.8, marker='X', label='Centroids')
-        ax.set_xlabel(numeric_cols[0])
-        ax.set_ylabel(numeric_cols[1])
-        ax.set_title(f'K-Means Clustering (k={n_clusters})')
-        plt.colorbar(scatter, ax=ax, label='Cluster')
-        st.pyplot(fig)
-    
-    return str(results)
-
-def analyze_anova(df):
-    st.write("### ANOVA Analysis")
-    numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
-    cat_cols = df.select_dtypes(include=['object']).columns.tolist()
-    
-    if len(numeric_cols) < 1 or len(cat_cols) < 1:
-        st.warning("Need 1+ numeric and 1+ categorical columns")
-        return None
-    
-    numeric_col = st.selectbox("Numeric Variable", numeric_cols, key="anova_num")
-    categorical_col = st.selectbox("Categorical Variable", cat_cols, key="anova_cat")
-    
-    groups = [group[numeric_col].dropna().values for name, group in df.groupby(categorical_col)]
-    f_stat, p_value = f_oneway(*groups)
-    
-    results = {
-        "F-statistic": f_stat,
-        "p-value": p_value,
-        "Number of Groups": len(groups),
-        "Significant": "Yes" if p_value < 0.05 else "No"
-    }
-    
-    st.write("**ANOVA Results:**")
-    results_df = pd.DataFrame(list(results.items()), columns=['Metric', 'Value'])
-    st.dataframe(results_df, use_container_width=True)
-    
-    fig, ax = plt.subplots(figsize=(10, 6))
-    df.boxplot(column=numeric_col, by=categorical_col, ax=ax)
-    ax.set_title(f'{numeric_col} by {categorical_col}')
     st.pyplot(fig)
     
     return str(results)
@@ -489,7 +491,7 @@ def solve_problem_with_ai(problem_text, category, api_key, image_data=None, lear
             return None
         
         if not image_data and (not problem_text or problem_text.strip() == ""):
-            st.error("Please enter a problem, upload an image, or upload a file")
+            st.error("Please enter a problem")
             return None
         
         content = []
@@ -504,27 +506,19 @@ def solve_problem_with_ai(problem_text, category, api_key, image_data=None, lear
                 }
             })
         
-        system_prompt = f"""You are an expert statistics and data science tutor. Your goal is to help students UNDERSTAND concepts.
+        system_prompt = f"""You are an expert statistics tutor. Help students UNDERSTAND concepts.
 
 IMPORTANT RULES:
-1. ALWAYS show step-by-step work
-2. EXPLAIN the WHY behind each step
+1. Show step-by-step work
+2. Explain the WHY
 3. Use LaTeX for formulas: $$formula$$
-4. NEVER give just an answer - always include reasoning
+4. Never just give answers
 
-Category: {category}
-Learning Mode: {'Yes - Provide hints first' if learning_mode else 'Standard - Full explanation'}"""
+Category: {category}"""
         
-        text_prompt = f"""Analyze and explain this statistics/data problem step-by-step.
+        text_prompt = f"""Analyze and explain this step-by-step.
 
-PROBLEM: {problem_text}
-
-RULES:
-- Show ALL work
-- Use LaTeX for formulas
-- Explain each step
-- State assumptions
-- Provide interpretation"""
+PROBLEM: {problem_text}"""
         
         content.append({"type": "text", "text": text_prompt})
 
@@ -548,18 +542,8 @@ RULES:
             result = response.json()
             solution_text = result['content'][0]['text']
             
-            input_tokens = API_COSTS["avg_input_tokens"]
-            output_tokens = API_COSTS["avg_output_tokens"]
-            cost = calculate_api_cost(input_tokens, output_tokens)
-            
             st.session_state.api_calls += 1
-            st.session_state.api_costs += cost
-            st.session_state.usage_log.append({
-                "timestamp": datetime.now(),
-                "problem": problem_text[:50] if problem_text else "Image",
-                "category": category,
-                "cost": cost,
-            })
+            st.session_state.api_costs += estimate_problem_cost()
             
             return solution_text
         else:
@@ -583,12 +567,8 @@ if "api_calls" not in st.session_state:
     st.session_state.api_calls = 0
 if "api_costs" not in st.session_state:
     st.session_state.api_costs = 0.0
-if "usage_log" not in st.session_state:
-    st.session_state.usage_log = []
 if "current_page" not in st.session_state:
     st.session_state.current_page = "home"
-if "terms_accepted" not in st.session_state:
-    st.session_state.terms_accepted = False
 
 # ============================================================================
 # SIDEBAR
@@ -605,28 +585,22 @@ with st.sidebar:
         login_type = st.radio("Login as:", ["Student", "Admin"], key="login_type")
         
         if login_type == "Student":
-            st.write("### Student Access")
-            st.write("**Demo:**")
-            st.write("Email: student@example.com")
-            st.write("Pass: password")
-            st.write("")
-            
+            st.write("**Demo:** student@example.com / password")
             student_email = st.text_input("Email:", key="student_email")
             student_pass = st.text_input("Password:", type="password", key="student_pass")
-            terms_check = st.checkbox("I agree to Terms & Privacy", key="terms_agree")
+            terms_check = st.checkbox("I agree to Terms", key="terms_agree")
             
             if st.button("Sign In", key="student_signin"):
                 if not terms_check:
-                    st.error("Accept terms to continue")
+                    st.error("Accept terms")
                 elif student_email == "student@example.com" and student_pass == "password":
                     st.session_state.user_id = f"student_{student_email}"
                     st.session_state.user_name = "Student"
-                    st.session_state.terms_accepted = True
                     st.rerun()
                 else:
                     st.error("Invalid credentials")
         else:
-            st.write("### Admin Access")
+            st.write("**Admin Password**")
             admin_pass = st.text_input("Password:", type="password", key="admin_pass")
             
             if st.button("Sign In", key="admin_signin"):
@@ -635,10 +609,9 @@ with st.sidebar:
                     st.session_state.user_name = "Admin"
                     st.rerun()
                 else:
-                    st.error("Invalid password")
+                    st.error("Invalid")
         
         st.divider()
-        st.write("### Legal")
         col1, col2 = st.columns(2)
         with col1:
             st.markdown("[Privacy](https://jrgavillan.github.io/data_insight_studio/privacy_policy.md)")
@@ -675,7 +648,7 @@ with st.sidebar:
 # ============================================================================
 
 if not st.session_state.user_id:
-    st.error("Please sign in to continue")
+    st.error("Please sign in")
 else:
     current_page = st.session_state.current_page
     
@@ -684,7 +657,6 @@ else:
         st.subheader("Professional Statistics & Machine Learning Homework Helper")
         st.divider()
         
-        # Hero Section
         col1, col2 = st.columns([2, 1])
         with col1:
             st.write("""
@@ -696,128 +668,51 @@ else:
             **Pricing:** $14.99 per 90-day term  
             **Support:** Questions? Contact us anytime
             """)
-        
         with col2:
-            st.info("⚖️ **Academic Integrity**\n\nDo NOT use on proctored exams!")
+            st.info("⚖️ **Academic Integrity**\n\nDo NOT use on exams!")
         
         st.divider()
         
-        # All Analysis Options as Beautiful Cards
         st.write("## 🚀 Available Analysis & Tools")
         st.write("Click **Homework Help** to get started with any of these:")
         
-        # Display all options in a grid
         cols = st.columns(2)
         analysis_list = list(ANALYSIS_CATEGORIES.items())
         
         for idx, (display_name, category) in enumerate(analysis_list):
             with cols[idx % 2]:
                 st.write(f"### {display_name}")
-                if category == "Descriptive Statistics":
+                if category == "Normality Testing":
+                    st.write("✨ Test for normality, transformations, sampling for approximate normality")
+                elif category == "Descriptive Statistics":
                     st.write("📈 Mean, median, std dev, visualizations")
-                elif category == "Hypothesis Testing":
-                    st.write("🧪 t-tests, chi-square, significance testing")
-                elif category == "Regression":
-                    st.write("📉 Linear/polynomial regression, R², predictions")
-                elif category == "ANOVA":
-                    st.write("📌 One-way ANOVA, group comparisons")
-                elif category == "Confidence Intervals":
-                    st.write("📊 CI calculation, margin of error")
-                elif category == "Probability":
-                    st.write("🔔 Distributions, normality testing")
-                elif category == "T-Tests":
-                    st.write("🧪 One/two-sample, paired t-tests")
-                elif category == "Chi-Square":
-                    st.write("🎯 Categorical association, independence")
                 elif category == "Machine Learning":
-                    st.write("🤖 Random Forest, Gradient Boosting, feature importance")
-                elif category == "Predictive Modeling":
-                    st.write("🔮 Train/test splits, prediction accuracy, overfitting")
-                elif category == "Clustering":
-                    st.write("📊 K-Means, cluster analysis, inertia")
-                elif category == "Time Series":
-                    st.write("📈 Trends, seasonality, forecasting")
-                elif category == "Data Visualization":
-                    st.write("🎨 Plots, heatmaps, dashboards")
+                    st.write("🤖 Random Forest, Gradient Boosting, features")
                 elif category == "Correlation":
-                    st.write("📋 Pearson/Spearman, correlation matrix")
+                    st.write("📋 Correlation matrix, heatmaps")
+                else:
+                    st.write("Statistical analysis and testing")
         
         st.divider()
-        
-        # Key Features
-        st.write("## ✨ Key Features")
-        
-        feature_cols = st.columns(3)
-        with feature_cols[0]:
-            st.write("""
-            ### 🧠 Smart Analysis
-            - Auto-detect appropriate tests
-            - Instant calculations
-            - Professional visualizations
-            """)
-        
-        with feature_cols[1]:
-            st.write("""
-            ### 📚 Learn with AI
-            - Step-by-step explanations
-            - Learning mode (hints first)
-            - Plain language interpretation
-            """)
-        
-        with feature_cols[2]:
-            st.write("""
-            ### 🎯 Complete Toolkit
-            - 14+ analysis types
-            - ML algorithms
-            - Data visualization
-            """)
-        
-        st.divider()
-        
-        # Call to Action
-        st.write("## 🎯 Get Started Now!")
-        st.write("Select **Homework Help** in the sidebar to:")
-        st.write("1. Upload your CSV/Excel file or image")
-        st.write("2. Choose your analysis type")
-        st.write("3. Get instant statistical results")
-        st.write("4. Ask AI to explain the results")
-        st.write("5. Learn and master statistics!")
-        
         st.success("Ready? Click **Homework Help** in the sidebar! 🚀")
-        
-        st.divider()
-        st.subheader("Privacy & Legal")
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            st.markdown("[Privacy Policy](https://jrgavillan.github.io/data_insight_studio/privacy_policy.md)")
-        with col2:
-            st.markdown("[Terms of Service](https://jrgavillan.github.io/data_insight_studio/privacy_policy.md)")
-        with col3:
-            st.markdown("[Contact Us](mailto:privacy@datainsightstudio.com)")
-        
-        st.info("🔒 We process and delete uploads. No storage. No training use.")
     
     elif current_page == "homework":
         st.header("📚 Homework Help")
-        st.write("Upload data or image, select analysis type, get instant results!")
+        st.write("Upload data or image, select analysis type!")
         st.divider()
         
         current_api_key = get_api_key()
         
         if not current_api_key:
-            st.warning("System not configured. Contact support.")
+            st.warning("System not configured")
         else:
             col1, col2 = st.columns(2)
             with col1:
-                learning_mode = st.checkbox("Learning Mode (hints first)")
-                if learning_mode:
-                    st.info("Get hints first, then full solution!")
-            
+                learning_mode = st.checkbox("Learning Mode")
             with col2:
-                category = st.selectbox("Select Analysis Type:", list(ANALYSIS_CATEGORIES.values()))
+                category = st.selectbox("Select Analysis:", list(ANALYSIS_CATEGORIES.values()))
             
             st.divider()
-            
             st.write("### Upload Your Data")
             uploaded_file = st.file_uploader("Choose file:", type=["jpg", "jpeg", "png", "xlsx", "xls", "csv"])
             
@@ -838,10 +733,12 @@ else:
                         data_analysis_mode = st.checkbox("Analyze this data")
                         
                         if data_analysis_mode:
-                            st.write("### Statistical Analysis")
+                            st.write("### Analysis")
                             
                             try:
-                                if category == "Descriptive Statistics":
+                                if category == "Normality Testing":
+                                    stats_results = analyze_normality_testing(df)
+                                elif category == "Descriptive Statistics":
                                     numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
                                     if numeric_cols:
                                         col_to_analyze = st.selectbox("Column:", numeric_cols)
@@ -851,26 +748,14 @@ else:
                                         fig = create_visualizations(df, col_to_analyze)
                                         st.pyplot(fig)
                                         stats_results = str(stats_dict)
-                                
-                                elif category == "Hypothesis Testing":
-                                    stats_results = analyze_hypothesis_testing(df)
                                 elif category == "Regression":
                                     stats_results = analyze_regression(df)
-                                elif category == "ANOVA":
-                                    stats_results = analyze_anova(df)
-                                elif category == "Machine Learning":
-                                    stats_results = analyze_machine_learning(df)
-                                elif category == "Predictive Modeling":
-                                    stats_results = analyze_predictive_modeling(df)
-                                elif category == "Clustering":
-                                    stats_results = analyze_clustering(df)
                                 elif category == "Correlation":
                                     stats_results = analyze_correlation(df)
                             except Exception as e:
-                                st.error(f"Analysis error: {str(e)}")
+                                st.error(f"Error: {str(e)}")
             
             st.divider()
-            
             st.write("### Or Type Your Problem")
             problem = st.text_area("Your problem:", placeholder="Type here...")
             
@@ -878,50 +763,22 @@ else:
             
             if st.button("SOLVE & LEARN", use_container_width=True):
                 problem_text_final = problem.strip() if problem else ""
-                image_b64 = None
                 
                 if stats_results:
                     problem_text_final = f"Results: {stats_results}\n\nExplain: {problem_text_final}"
                 
-                if uploaded_file:
-                    if uploaded_file.name.endswith(('jpg', 'jpeg', 'png')):
-                        image_b64 = image_to_base64(uploaded_file)
-                    elif not data_analysis_mode and df is not None:
-                        problem_text_final = f"Data:\n{df.to_string()}\n\n{problem_text_final}"
-                
-                if problem_text_final or image_b64:
+                if problem_text_final:
                     with st.spinner("Analyzing..."):
-                        solution = solve_problem_with_ai(problem_text_final, category, current_api_key, image_b64, learning_mode)
+                        solution = solve_problem_with_ai(problem_text_final, category, current_api_key, None, learning_mode)
                     
                     if solution:
                         st.divider()
                         st.subheader("✅ Solution")
                         st.markdown(solution)
-                else:
-                    st.error("Enter problem or upload file")
     
     elif current_page == "resources":
         st.header("📈 Resources")
-        st.write("Free study materials")
-        st.divider()
-        
-        tab1, tab2, tab3 = st.tabs(["Formulas", "Guides", "FAQ"])
-        
-        with tab1:
-            st.write("**Common Formulas:**")
-            st.markdown("""
-            - Mean: $$\\mu = \\frac{\\sum x}{n}$$
-            - Std Dev: $$\\sigma = \\sqrt{\\frac{\\sum(x-\\mu)^2}{n}}$$
-            - t-statistic: $$t = \\frac{\\bar{x} - \\mu_0}{s/\\sqrt{n}}$$
-            """)
-        
-        with tab2:
-            st.write("**Guides Coming Soon**")
-        
-        with tab3:
-            st.write("**Q: Can I cheat?** A: No - learning focused!")
-            st.write("**Q: Use on exams?** A: NO - violates honor code!")
-            st.write("**Q: Data safe?** A: Yes - instant deletion!")
+        st.write("Free study materials coming soon!")
     
     elif current_page == "analytics":
         st.header("Analytics")
@@ -931,16 +788,11 @@ else:
     if st.session_state.user_id == "admin":
         st.divider()
         st.header("ADMIN")
-        st.divider()
-        
-        st.subheader("API Key")
         api_key = st.text_input("API Key:", type="password", value=load_api_key() or "")
-        
         if api_key and save_api_key(api_key):
             st.session_state.api_key = api_key
             st.success("Saved!")
         
-        col1, col2, col3 = st.columns(3)
-        col1.metric("Calls", st.session_state.api_calls)
+        col1, col2 = st.columns(2)
+        col1.metric("API Calls", st.session_state.api_calls)
         col2.metric("Cost", f"${st.session_state.api_costs:.2f}")
-        col3.metric("Margin", "80%")
