@@ -5,6 +5,10 @@ import json
 import os
 from datetime import datetime
 import pandas as pd
+import numpy as np
+from scipy import stats
+import matplotlib.pyplot as plt
+import io
 
 # ============================================================================
 # CONFIGURATION
@@ -41,12 +45,10 @@ def save_api_key(key):
 
 def load_api_key():
     """Load API key from file or environment variable"""
-    # Try environment variable first (Render/cloud)
     env_key = os.environ.get("ANTHROPIC_API_KEY")
     if env_key:
         return env_key
     
-    # Fall back to file (local development)
     try:
         if os.path.exists(CONFIG_FILE):
             with open(CONFIG_FILE, "r") as f:
@@ -60,7 +62,6 @@ def get_api_key():
     if st.session_state.api_key:
         return st.session_state.api_key
     
-    # Try to load from file
     file_key = load_api_key()
     if file_key:
         st.session_state.api_key = file_key
@@ -80,17 +81,64 @@ def image_to_base64(image_file):
 # ============================================================================
 
 def read_excel_csv(file):
-    """Read Excel or CSV file and convert to text"""
+    """Read Excel or CSV file and convert to dataframe"""
     try:
         if file.name.endswith('.csv'):
             df = pd.read_csv(file)
-            return df.to_string()
+            return df
         elif file.name.endswith(('.xlsx', '.xls')):
             df = pd.read_excel(file)
-            return df.to_string()
+            return df
     except Exception as e:
-        return f"Error reading file: {str(e)}"
-    return None
+        st.error(f"Error reading file: {str(e)}")
+        return None
+
+# ============================================================================
+# STATISTICAL ANALYSIS FUNCTIONS
+# ============================================================================
+
+def calculate_descriptive_stats(df, column):
+    """Calculate descriptive statistics"""
+    stats_dict = {
+        "Mean": df[column].mean(),
+        "Median": df[column].median(),
+        "Std Dev": df[column].std(),
+        "Min": df[column].min(),
+        "Max": df[column].max(),
+        "Q1": df[column].quantile(0.25),
+        "Q3": df[column].quantile(0.75),
+        "IQR": df[column].quantile(0.75) - df[column].quantile(0.25),
+        "Skewness": df[column].skew(),
+        "Kurtosis": df[column].kurtosis(),
+        "N": len(df)
+    }
+    return stats_dict
+
+def create_visualizations(df, column):
+    """Create standard statistical visualizations"""
+    fig, axes = plt.subplots(2, 2, figsize=(12, 10))
+    
+    # Histogram
+    axes[0, 0].hist(df[column].dropna(), bins=30, edgecolor='black', alpha=0.7)
+    axes[0, 0].set_title(f'Histogram of {column}')
+    axes[0, 0].set_xlabel('Value')
+    axes[0, 0].set_ylabel('Frequency')
+    
+    # Box plot
+    axes[0, 1].boxplot(df[column].dropna())
+    axes[0, 1].set_title(f'Box Plot of {column}')
+    axes[0, 1].set_ylabel('Value')
+    
+    # Q-Q plot
+    stats.probplot(df[column].dropna(), dist="norm", plot=axes[1, 0])
+    axes[1, 0].set_title('Q-Q Plot')
+    
+    # Density plot
+    df[column].plot(kind='density', ax=axes[1, 1])
+    axes[1, 1].set_title(f'Density Plot of {column}')
+    
+    plt.tight_layout()
+    return fig
 
 # ============================================================================
 # HELPER: CALCULATE COSTS
@@ -111,19 +159,17 @@ def estimate_problem_cost():
 # AI PROBLEM SOLVER
 # ============================================================================
 
-def solve_problem_with_ai(problem_text, category, api_key, image_data=None):
-    """Use Claude API to solve the problem (with optional image or file data)"""
+def solve_problem_with_ai(problem_text, category, api_key, image_data=None, learning_mode=False):
+    """Use Claude API to solve the problem"""
     try:
-        # Validate API key
         if not api_key:
             st.error("❌ API key is missing!")
             return None
         
         if not api_key.startswith("sk-ant-"):
-            st.error("❌ Invalid API key format. Key should start with 'sk-ant-'")
+            st.error("❌ Invalid API key format")
             return None
         
-        # Validate problem input
         if not image_data and (not problem_text or problem_text.strip() == ""):
             st.error("❌ Please enter a problem, upload an image, or upload a file")
             return None
@@ -139,56 +185,43 @@ def solve_problem_with_ai(problem_text, category, api_key, image_data=None):
                     "data": image_data
                 }
             })
-            content.append({
-                "type": "text",
-                "text": f"""Please read this homework problem from the image and solve it step-by-step.
+        
+        system_prompt = f"""You are an expert statistics tutor in LEARNING MODE. 
+Your goal is to help students UNDERSTAND the concepts, not just get answers.
+
+IMPORTANT RULES:
+1. ALWAYS show step-by-step work
+2. EXPLAIN the WHY behind each step
+3. Use LaTeX/math notation for formulas (wrap in $$)
+4. When showing formulas use this format: $$formula$$
+5. NEVER give just an answer - always include reasoning
 
 Category: {category}
+Learning Mode: {'Yes - Provide hints first, then solution' if learning_mode else 'Standard - Full solution with explanation'}
 
-If there's also text below, use both the image and text to understand the problem.
-
-Problem text: {problem_text if problem_text else "See image above"}
-
-Provide a complete solution with:
-1. ANALYSIS: What the problem asks
-2. CONCEPT: Statistical concepts
-3. STEPS: Step-by-step solution
-4. ANSWER: Final answer
-5. INTERPRETATION: What it means
-
-Format exactly:
-ANALYSIS: [text]
-CONCEPT: [text]
-STEPS: 
-- Step 1: [text]
-- Step 2: [text]
-ANSWER: [text]
-INTERPRETATION: [text]"""
-            })
-        else:
-            content.append({
-                "type": "text",
-                "text": f"""You are a statistics tutor solving this problem:
+Format your response with these sections:
+📚 CONCEPT: What statistical concept applies here?
+🎯 APPROACH: What method/formula should we use?
+📊 CALCULATION: Show the work step-by-step
+✅ ANSWER: The final result
+💡 INTERPRETATION: What does this mean in plain language?
+🔍 ASSUMPTIONS: What assumptions did we make?"""
+        
+        text_prompt = f"""Solve this statistics problem step-by-step.
 
 PROBLEM: {problem_text}
-CATEGORY: {category}
 
-Provide a complete solution with:
-1. ANALYSIS: What the problem asks
-2. CONCEPT: Statistical concepts
-3. STEPS: Step-by-step solution
-4. ANSWER: Final answer
-5. INTERPRETATION: What it means
-
-Format exactly:
-ANALYSIS: [text]
-CONCEPT: [text]
-STEPS: 
-- Step 1: [text]
-- Step 2: [text]
-ANSWER: [text]
-INTERPRETATION: [text]"""
-            })
+RULES:
+- Show ALL calculations
+- Use LaTeX for formulas: $$formula$$
+- Explain each step
+- State assumptions
+- Give final answer with interpretation"""
+        
+        content.append({
+            "type": "text",
+            "text": text_prompt
+        })
 
         response = requests.post(
             "https://api.anthropic.com/v1/messages",
@@ -199,7 +232,8 @@ INTERPRETATION: [text]"""
             },
             json={
                 "model": "claude-opus-4-1-20250805",
-                "max_tokens": 1500,
+                "max_tokens": 2000,
+                "system": system_prompt,
                 "messages": [{"role": "user", "content": content}]
             },
             timeout=30
@@ -209,7 +243,6 @@ INTERPRETATION: [text]"""
             result = response.json()
             solution_text = result['content'][0]['text']
             
-            # Track usage
             input_tokens = API_COSTS["avg_input_tokens"]
             output_tokens = API_COSTS["avg_output_tokens"]
             cost = calculate_api_cost(input_tokens, output_tokens)
@@ -218,89 +251,23 @@ INTERPRETATION: [text]"""
             st.session_state.api_costs += cost
             st.session_state.usage_log.append({
                 "timestamp": datetime.now(),
-                "problem": problem_text[:50] if problem_text else "File/Image problem",
+                "problem": problem_text[:50] if problem_text else "Image problem",
                 "category": category,
                 "cost": cost,
                 "input_tokens": input_tokens,
                 "output_tokens": output_tokens,
-                "has_image": image_data is not None
+                "has_image": image_data is not None,
+                "learning_mode": learning_mode
             })
             
-            return parse_solution(solution_text)
+            return solution_text
         else:
-            # Better error messages for debugging
             error_msg = f"API Error {response.status_code}"
-            try:
-                error_detail = response.json()
-                if "error" in error_detail:
-                    error_msg += f": {error_detail['error'].get('message', 'Unknown error')}"
-            except:
-                error_msg += f": {response.text[:200]}"
-            
             st.error(f"❌ {error_msg}")
-            
-            if response.status_code == 400:
-                st.warning("⚠️ **Troubleshooting 400 Error:**")
-                st.write("- Verify API key is correct (starts with sk-ant-)")
-                st.write("- Check that you have API credits (you purchased $5)")
-                st.write("- Try a simpler problem text")
-                st.write("- Refresh page and try again")
-            elif response.status_code == 401:
-                st.error("❌ Invalid API key. Double-check your credentials.")
-            elif response.status_code == 429:
-                st.error("❌ Rate limit exceeded. Please wait a moment and try again.")
-            
             return None
     except Exception as e:
         st.error(f"❌ Error: {str(e)}")
-        st.info("💡 Try refreshing the page or checking your internet connection.")
         return None
-
-def parse_solution(text):
-    """Parse solution text into structured format"""
-    solution = {
-        "analysis": "",
-        "concept": "",
-        "steps": [],
-        "answer": "",
-        "interpretation": ""
-    }
-    
-    sections = {
-        "ANALYSIS:": "analysis",
-        "CONCEPT:": "concept",
-        "STEPS:": "steps",
-        "ANSWER:": "answer",
-        "INTERPRETATION:": "interpretation"
-    }
-    
-    current_section = None
-    current_content = []
-    
-    for line in text.split('\n'):
-        matched = False
-        for marker, key in sections.items():
-            if marker in line:
-                if current_section and current_content:
-                    if current_section == "steps":
-                        solution[current_section] = [s.strip('- ').strip() for s in current_content if s.strip()]
-                    else:
-                        solution[current_section] = ' '.join(current_content).strip()
-                current_section = key
-                current_content = [line.replace(marker, '').strip()]
-                matched = True
-                break
-        
-        if not matched and current_section:
-            current_content.append(line.strip())
-    
-    if current_section and current_content:
-        if current_section == "steps":
-            solution[current_section] = [s.strip('- ').strip() for s in current_content if s.strip()]
-        else:
-            solution[current_section] = ' '.join(current_content).strip()
-    
-    return solution
 
 # ============================================================================
 # INITIALIZE SESSION STATE
@@ -330,7 +297,6 @@ with st.sidebar:
     st.divider()
     
     if not st.session_state.user_id:
-        # LOGIN FORM
         login_type = st.radio("Login as:", ["Student", "Admin"], key="login_type")
         
         if login_type == "Student":
@@ -341,18 +307,17 @@ with st.sidebar:
             st.write("")
             
             student_email = st.text_input("Email:", key="student_email", placeholder="student@example.com")
-            student_pass = st.text_input("Password:", type="password", key="student_pass", placeholder="password")
+            student_pass = st.text_input("Password:", type="password", key="student_pass")
             
             if st.button("Sign In", key="student_signin"):
-                # Fixed credentials
                 if student_email == "student@example.com" and student_pass == "password":
                     st.session_state.user_id = f"student_{student_email}"
                     st.session_state.user_name = "Student"
                     st.rerun()
                 else:
-                    st.error("❌ Invalid email or password. Use student@example.com / password")
+                    st.error("❌ Invalid credentials")
         
-        else:  # Admin
+        else:
             st.write("### Admin Access")
             admin_pass = st.text_input("Password:", type="password", key="admin_pass")
             
@@ -365,11 +330,9 @@ with st.sidebar:
                     st.error("❌ Invalid password")
     
     else:
-        # LOGGED IN - NAVIGATION
         st.write(f"### Welcome, {st.session_state.user_name}! 👋")
         st.divider()
         
-        # Navigation buttons in 2-column layout
         col1, col2 = st.columns(2)
         with col1:
             if st.button("🏠 Home", use_container_width=True):
@@ -405,50 +368,64 @@ else:
     current_page = st.session_state.current_page
     
     if current_page == "home":
-        # HOME PAGE
         st.title("📊 Data Insight Studio")
-        st.subheader("AI-Powered Homework Helper")
+        st.subheader("AI-Powered Statistics Homework Helper")
         st.divider()
         
         st.write("""
         ### Welcome to Data Insight Studio! 🎓
         
-        Get instant help with your statistics homework using AI!
+        Get expert help with your statistics homework using AI!
         
         **Features:**
-        - 📚 **Homework Help** - Upload homework (images, Excel, CSV) → Get AI solutions
-        - 📊 **Analytics** - Coming soon
-        - 📈 **Resources** - Free study materials
+        - 📚 **Homework Help** - Upload images, Excel, CSV → Get step-by-step solutions
+        - 📊 **Data Analysis** - Descriptive stats, visualizations, interpretations
+        - 📈 **Resources** - Free study materials and guides
+        
+        **Learning-Focused Features:**
+        - ✅ Step-by-step explanations (no just answers!)
+        - ✅ Learning Mode - Hints first, then solutions
+        - ✅ Math formulas with LaTeX rendering
+        - ✅ Visualizations and intermediate outputs
+        - ✅ Plain language interpretations
         
         **Pricing:** $14.99 per 90-day term
         
+        **Academic Integrity:** ⚖️ Do NOT use on proctored exams
+        
         Click **📚 Homework Help** to get started!
         """)
+        
+        st.divider()
+        st.info("🔒 **Privacy Notice:** We process and delete your uploads. We do not store them or use them for training. See our Privacy Policy for details.")
     
     elif current_page == "homework":
-        # HOMEWORK HELP (PAID FEATURE)
         st.header("📚 HOMEWORK HELP")
         st.write("Upload an image, Excel file, CSV file, or type your problem below")
         st.divider()
         
-        # Get the API key (from session or saved file)
         current_api_key = get_api_key()
         
         if not current_api_key:
             st.warning("⚠️ System not configured yet. Please contact support.")
             st.info("Admin needs to configure API key before homework help is available.")
         else:
+            # Learning mode toggle
+            learning_mode = st.checkbox("🎯 Learning Mode (hints first, then solution)", value=False)
+            if learning_mode:
+                st.info("In Learning Mode, you'll get hints first to help you work through the problem yourself!")
+            
             col1, col2 = st.columns(2)
             with col1:
                 category = st.selectbox("Category:", 
                     ["Descriptive Statistics", "Hypothesis Testing", "Confidence Intervals", 
-                     "Probability", "Regression", "Other"], key="cat")
+                     "Probability", "Regression", "ANOVA", "T-Tests", "Other"], key="cat")
             with col2:
                 difficulty = st.selectbox("Difficulty:", ["Beginner", "Intermediate", "Advanced"], key="diff")
             
             st.write("")
             
-            # FILE UPLOAD (Images, Excel, CSV)
+            # FILE UPLOAD
             st.write("### 📁 Upload File (Optional)")
             st.write("Image, Excel, or CSV - whatever your homework is!")
             
@@ -458,18 +435,41 @@ else:
                 key="problem_file"
             )
             
+            data_analysis_mode = False
+            df = None
+            
             if uploaded_file:
                 if uploaded_file.name.endswith(('jpg', 'jpeg', 'png')):
                     st.image(uploaded_file, caption="Your homework problem", use_container_width=True)
                 elif uploaded_file.name.endswith(('.csv', '.xlsx', '.xls')):
                     st.info(f"📊 File uploaded: {uploaded_file.name}")
-                    # Show preview
-                    try:
-                        df = pd.read_csv(uploaded_file) if uploaded_file.name.endswith('.csv') else pd.read_excel(uploaded_file)
+                    df = read_excel_csv(uploaded_file)
+                    
+                    if df is not None:
                         st.write("**File Preview:**")
                         st.dataframe(df.head(), use_container_width=True)
-                    except:
-                        st.warning("Could not preview file")
+                        
+                        # Data analysis mode
+                        data_analysis_mode = st.checkbox("📊 Analyze this data")
+                        
+                        if data_analysis_mode:
+                            st.write("### 📈 Quick Analysis")
+                            
+                            numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+                            
+                            if numeric_cols:
+                                col_to_analyze = st.selectbox("Select column to analyze:", numeric_cols)
+                                
+                                # Descriptive stats
+                                st.write("**Descriptive Statistics:**")
+                                stats_dict = calculate_descriptive_stats(df, col_to_analyze)
+                                stats_df = pd.DataFrame(list(stats_dict.items()), columns=['Statistic', 'Value'])
+                                st.dataframe(stats_df, use_container_width=True)
+                                
+                                # Visualizations
+                                st.write("**Visualizations:**")
+                                fig = create_visualizations(df, col_to_analyze)
+                                st.pyplot(fig)
             
             st.write("")
             st.write("### 📝 Or Type Your Problem")
@@ -483,64 +483,60 @@ else:
             
             st.write("")
             
-            if st.button("🔍 SOLVE THIS", use_container_width=True):
+            # Academic integrity warning
+            st.warning("⚠️ **REMINDER:** Do NOT use this on proctored exams. This is for learning and homework preparation only.")
+            
+            if st.button("🔍 SOLVE THIS & LEARN", use_container_width=True):
                 problem_text_final = problem.strip() if problem else ""
                 image_b64 = None
                 
-                # Handle uploaded file
                 if uploaded_file:
                     if uploaded_file.name.endswith(('jpg', 'jpeg', 'png')):
-                        # It's an image
                         image_b64 = image_to_base64(uploaded_file)
                     elif uploaded_file.name.endswith(('.csv', '.xlsx', '.xls')):
-                        # It's Excel/CSV
-                        file_content = read_excel_csv(uploaded_file)
-                        if file_content:
-                            problem_text_final = f"Here's a data set or problem:\n\n{file_content}\n\nPlease analyze this and help solve the homework problem."
+                        if not data_analysis_mode:
+                            problem_text_final = f"Analyze this data file:\n\n{df.to_string()}\n\n{problem_text_final}"
                 
                 if problem_text_final or image_b64:
-                    with st.spinner("🤔 AI is solving..."):
+                    with st.spinner("🤔 AI is solving and explaining..."):
                         solution = solve_problem_with_ai(
                             problem_text_final,
                             category,
                             current_api_key,
-                            image_data=image_b64
+                            image_data=image_b64,
+                            learning_mode=learning_mode
                         )
                     
                     if solution:
                         st.divider()
-                        st.subheader("✅ SOLUTION")
+                        st.subheader("✅ STEP-BY-STEP SOLUTION")
+                        st.markdown(solution)
                         
-                        st.write(f"**Analysis:** {solution['analysis']}")
-                        st.write(f"**Concept:** {solution['concept']}")
-                        st.write("**Steps:**")
-                        for i, s in enumerate(solution['steps'], 1):
-                            st.write(f"{i}. {s}")
-                        st.success(f"**Answer:** {solution['answer']}")
-                        st.info(f"**Interpretation:** {solution['interpretation']}")
+                        # Use st.markdown with LaTeX support for math formulas
+                        st.markdown("*This solution uses LaTeX notation for mathematical formulas.*")
                 else:
-                    st.error("Enter your problem, upload an image, or upload a file")
+                    st.error("Enter your problem or upload a file")
     
     elif current_page == "analytics":
-        # ANALYTICS (FREE)
         st.header("📊 Analytics")
         st.info("🔄 Coming soon - Track your learning progress with detailed analytics!")
     
     elif current_page == "resources":
-        # RESOURCES (FREE)
         st.header("📈 Resources")
         st.subheader("Free Study Materials")
         st.divider()
         
-        tab1, tab2, tab3 = st.tabs(["Formulas", "Guides", "Tutorials"])
+        tab1, tab2, tab3, tab4 = st.tabs(["Formulas", "Guides", "Tutorials", "FAQ"])
         
         with tab1:
             st.write("**Common Statistical Formulas:**")
-            st.write("- Mean: μ = Σx / n")
-            st.write("- Variance: σ² = Σ(x - μ)² / n")
-            st.write("- Standard Deviation: σ = √variance")
-            st.write("- Z-score: z = (x - μ) / σ")
-            st.write("More formulas coming soon...")
+            st.markdown("""
+            - Mean: $$\\mu = \\frac{\\sum x}{n}$$
+            - Variance: $$\\sigma^2 = \\frac{\\sum(x - \\mu)^2}{n}$$
+            - Standard Deviation: $$\\sigma = \\sqrt{\\sigma^2}$$
+            - Z-score: $$z = \\frac{x - \\mu}{\\sigma}$$
+            - t-statistic: $$t = \\frac{\\bar{x} - \\mu_0}{s/\\sqrt{n}}$$
+            """)
         
         with tab2:
             st.write("**Study Guides:**")
@@ -554,7 +550,15 @@ else:
             st.write("- Understanding Normal Distribution")
             st.write("- T-Tests Explained")
             st.write("- Regression Analysis Guide")
-            st.write("More tutorials coming soon...")
+        
+        with tab4:
+            st.write("**Frequently Asked Questions:**")
+            st.write("**Q: Will this help me cheat?**")
+            st.write("A: No - we focus on LEARNING, not answers. All solutions show steps and reasoning.")
+            st.write("**Q: Can I use this on exams?**")
+            st.write("A: NO - Do not use on proctored exams. Violates academic integrity.")
+            st.write("**Q: Is my data safe?**")
+            st.write("A: Yes - we process and delete uploads immediately. No storage or training use.")
     
     # ADMIN DASHBOARD
     if st.session_state.user_id == "admin":
@@ -562,7 +566,6 @@ else:
         st.header("📊 ADMIN DASHBOARD")
         st.divider()
         
-        # Show API key input
         st.subheader("🔑 API Configuration")
         api_key = st.text_input(
             "Paste your Claude API key:",
@@ -573,10 +576,9 @@ else:
         )
         
         if api_key:
-            # Save to file when entered
             if save_api_key(api_key):
                 st.session_state.api_key = api_key
-                st.success("✅ API key saved! (Will persist even after logout)")
+                st.success("✅ API key saved!")
             else:
                 st.error("❌ Could not save API key")
         
@@ -596,6 +598,6 @@ else:
         st.subheader("📈 USAGE LOG")
         if st.session_state.usage_log:
             log_df = pd.DataFrame(st.session_state.usage_log)
-            st.dataframe(log_df[["timestamp", "category", "has_image", "cost"]], use_container_width=True)
+            st.dataframe(log_df[["timestamp", "category", "learning_mode", "has_image", "cost"]], use_container_width=True)
         else:
             st.info("No API calls yet")
