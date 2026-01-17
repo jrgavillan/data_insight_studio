@@ -17,6 +17,8 @@ import io
 st.set_page_config(page_title="Data Insight Studio", layout="wide")
 
 CONFIG_FILE = "api_config.txt"
+PRIVACY_POLICY_URL = "https://yourhomeworkhelper.onrender.com/privacy"
+TERMS_URL = "https://yourhomeworkhelper.onrender.com/terms"
 
 API_COSTS = {
     "per_1m_input": 0.003,
@@ -287,6 +289,8 @@ if "usage_log" not in st.session_state:
     st.session_state.usage_log = []
 if "current_page" not in st.session_state:
     st.session_state.current_page = "home"
+if "terms_accepted" not in st.session_state:
+    st.session_state.terms_accepted = False
 
 # ============================================================================
 # SIDEBAR: LOGIN & NAVIGATION
@@ -309,10 +313,16 @@ with st.sidebar:
             student_email = st.text_input("Email:", key="student_email", placeholder="student@example.com")
             student_pass = st.text_input("Password:", type="password", key="student_pass")
             
+            # Terms acceptance
+            terms_check = st.checkbox("I agree to the Terms of Service and Privacy Policy", key="terms_agree")
+            
             if st.button("Sign In", key="student_signin"):
-                if student_email == "student@example.com" and student_pass == "password":
+                if not terms_check:
+                    st.error("❌ Please accept the terms to continue")
+                elif student_email == "student@example.com" and student_pass == "password":
                     st.session_state.user_id = f"student_{student_email}"
                     st.session_state.user_name = "Student"
+                    st.session_state.terms_accepted = True
                     st.rerun()
                 else:
                     st.error("❌ Invalid credentials")
@@ -328,6 +338,14 @@ with st.sidebar:
                     st.rerun()
                 else:
                     st.error("❌ Invalid password")
+        
+        st.divider()
+        st.write("### 📋 Legal")
+        col1, col2 = st.columns(2)
+        with col1:
+            st.markdown("[Privacy Policy](https://yourhomeworkhelper.onrender.com/privacy)")
+        with col2:
+            st.markdown("[Terms of Service](https://yourhomeworkhelper.onrender.com/terms)")
     
     else:
         st.write(f"### Welcome, {st.session_state.user_name}! 👋")
@@ -397,7 +415,18 @@ else:
         """)
         
         st.divider()
-        st.info("🔒 **Privacy Notice:** We process and delete your uploads. We do not store them or use them for training. See our Privacy Policy for details.")
+        
+        # Privacy & Legal Section
+        st.subheader("🔒 Privacy & Legal")
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.markdown("[📋 Privacy Policy](https://yourhomeworkhelper.onrender.com/privacy)")
+        with col2:
+            st.markdown("[⚖️ Terms of Service](https://yourhomeworkhelper.onrender.com/terms)")
+        with col3:
+            st.markdown("[📧 Contact Us](mailto:privacy@datainsightstudio.com)")
+        
+        st.info("🔒 We process and delete your uploads. We do not store them or use them for training.")
     
     elif current_page == "homework":
         st.header("📚 HOMEWORK HELP")
@@ -512,7 +541,6 @@ else:
                         st.subheader("✅ STEP-BY-STEP SOLUTION")
                         st.markdown(solution)
                         
-                        # Use st.markdown with LaTeX support for math formulas
                         st.markdown("*This solution uses LaTeX notation for mathematical formulas.*")
                 else:
                     st.error("Enter your problem or upload a file")
