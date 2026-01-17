@@ -17,8 +17,49 @@ import io
 st.set_page_config(page_title="Data Insight Studio", layout="wide")
 
 CONFIG_FILE = "api_config.txt"
-PRIVACY_POLICY_URL = "https://yourhomeworkhelper.onrender.com/privacy"
-TERMS_URL = "https://yourhomeworkhelper.onrender.com/terms"
+PRIVACY_POLICY_URL = "https://jrgavillan.github.io/data_insight_studio/privacy_policy.md"
+TERMS_URL = "https://jrgavillan.github.io/data_insight_studio/privacy_policy.md"
+```
+
+3. Click: **Commit changes**
+
+---
+
+## 🚀 **THEN DEPLOY:**
+
+1. Go to: **https://render.com/dashboard**
+2. Click: **yourhomeworkhelper**
+3. Click: **Manual Deploy**
+4. Wait 5-10 minutes
+5. Test: Click privacy links on your app ✅
+
+---
+
+## 📸 **VISUAL GUIDE:**
+```
+GitHub Repo
+    ↓
+Settings (top right tab)
+    ↓
+Pages (left sidebar)
+    ↓
+Build and deployment section
+    ↓
+Source: "Deploy from a branch"
+Branch: "main"
+Folder: "/ (root)"
+    ↓
+Click Save
+    ↓
+Green checkmark = Live! ✅
+    ↓
+Copy generated URL
+    ↓
+Update app.py with URL
+    ↓
+Manual Deploy on Render
+    ↓
+Done! 🎉
 
 API_COSTS = {
     "per_1m_input": 0.003,
