@@ -297,7 +297,7 @@ if "terms_accepted" not in st.session_state:
 # ============================================================================
 
 with st.sidebar:
-    st.title("Data Insight Studio")
+    st.image("logo_1.png", width=250)
     st.divider()
     
     if not st.session_state.user_id:
