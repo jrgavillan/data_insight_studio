@@ -7,8 +7,12 @@ from datetime import datetime
 import pandas as pd
 import numpy as np
 from scipy import stats
+from scipy.stats import ttest_ind, ttest_rel, f_oneway, chi2_contingency, linregress, norm
+from sklearn.linear_model import LinearRegression, LogisticRegression
 import matplotlib.pyplot as plt
 import io
+import warnings
+warnings.filterwarnings('ignore')
 
 # ============================================================================
 # CONFIGURATION
@@ -141,6 +145,340 @@ def create_visualizations(df, column):
     
     plt.tight_layout()
     return fig
+
+def analyze_hypothesis_testing(df):
+    """Perform hypothesis testing"""
+    st.write("### Hypothesis Testing Analysis")
+    
+    numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+    
+    if len(numeric_cols) < 1:
+        st.warning("Need at least 1 numeric column")
+        return None
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        if len(numeric_cols) >= 2:
+            test_type = st.selectbox("Test Type", ["One-sample t-test", "Two-sample t-test", "Chi-square"])
+        else:
+            test_type = "One-sample t-test"
+    
+    results = {}
+    
+    if test_type == "One-sample t-test":
+        col = st.selectbox("Select column", numeric_cols, key="hyp_col")
+        null_mean = st.number_input("Null hypothesis mean", value=0.0)
+        
+        t_stat, p_value = stats.ttest_1samp(df[col].dropna(), null_mean)
+        results = {
+            "Test": "One-sample t-test",
+            "Null Mean": null_mean,
+            "t-statistic": t_stat,
+            "p-value": p_value,
+            "Significant": "Yes" if p_value < 0.05 else "No"
+        }
+    
+    elif test_type == "Two-sample t-test":
+        if len(numeric_cols) >= 2:
+            col1_select = st.selectbox("Column 1", numeric_cols, key="col1")
+            col2_select = st.selectbox("Column 2", numeric_cols, key="col2", index=1)
+            
+            t_stat, p_value = ttest_ind(df[col1_select].dropna(), df[col2_select].dropna())
+            results = {
+                "Test": "Two-sample t-test",
+                "Column 1": col1_select,
+                "Column 2": col2_select,
+                "t-statistic": t_stat,
+                "p-value": p_value,
+                "Significant": "Yes" if p_value < 0.05 else "No"
+            }
+    
+    elif test_type == "Chi-square":
+        st.info("Select two categorical columns")
+        cat_cols = df.select_dtypes(include=['object']).columns.tolist()
+        if len(cat_cols) >= 2:
+            cat1 = st.selectbox("Category 1", cat_cols, key="cat1")
+            cat2 = st.selectbox("Category 2", cat_cols, key="cat2", index=1)
+            
+            contingency = pd.crosstab(df[cat1], df[cat2])
+            chi2, p_value, dof, expected = chi2_contingency(contingency)
+            results = {
+                "Test": "Chi-square",
+                "Chi2-statistic": chi2,
+                "p-value": p_value,
+                "Degrees of Freedom": dof,
+                "Significant": "Yes" if p_value < 0.05 else "No"
+            }
+    
+    if results:
+        st.write("**Results:**")
+        results_df = pd.DataFrame(list(results.items()), columns=['Metric', 'Value'])
+        st.dataframe(results_df, use_container_width=True)
+        return str(results)
+    
+    return None
+
+def analyze_regression(df):
+    """Perform regression analysis"""
+    st.write("### Regression Analysis")
+    
+    numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+    
+    if len(numeric_cols) < 2:
+        st.warning("Need at least 2 numeric columns")
+        return None
+    
+    x_col = st.selectbox("Independent Variable (X)", numeric_cols, key="x_col")
+    y_col = st.selectbox("Dependent Variable (Y)", numeric_cols, key="y_col", index=1 if len(numeric_cols) > 1 else 0)
+    
+    # Remove missing values
+    data_clean = df[[x_col, y_col]].dropna()
+    X = data_clean[x_col].values.reshape(-1, 1)
+    y = data_clean[y_col].values
+    
+    # Fit linear regression
+    model = LinearRegression()
+    model.fit(X, y)
+    
+    # Calculate statistics
+    r_squared = model.score(X, y)
+    slope = model.coef_[0]
+    intercept = model.intercept_
+    
+    # T-test for slope
+    y_pred = model.predict(X)
+    residuals = y - y_pred
+    rss = np.sum(residuals**2)
+    mse = rss / (len(y) - 2)
+    se_slope = np.sqrt(mse / np.sum((X - X.mean())**2))
+    t_stat = slope / se_slope
+    p_value = 2 * (1 - stats.t.cdf(abs(t_stat), len(y) - 2))
+    
+    results = {
+        "Equation": f"Y = {intercept:.4f} + {slope:.4f}*X",
+        "R-squared": r_squared,
+        "Slope": slope,
+        "Intercept": intercept,
+        "p-value (slope)": p_value,
+        "Significant": "Yes" if p_value < 0.05 else "No"
+    }
+    
+    st.write("**Regression Results:**")
+    results_df = pd.DataFrame(list(results.items()), columns=['Metric', 'Value'])
+    st.dataframe(results_df, use_container_width=True)
+    
+    # Plot
+    fig, ax = plt.subplots(figsize=(10, 6))
+    ax.scatter(X, y, alpha=0.6, label='Data')
+    X_line = np.linspace(X.min(), X.max(), 100).reshape(-1, 1)
+    y_line = model.predict(X_line)
+    ax.plot(X_line, y_line, 'r-', label=f'Fit: Y = {intercept:.2f} + {slope:.2f}*X')
+    ax.set_xlabel(x_col)
+    ax.set_ylabel(y_col)
+    ax.set_title('Linear Regression')
+    ax.legend()
+    st.pyplot(fig)
+    
+    return str(results)
+
+def analyze_anova(df):
+    """Perform ANOVA analysis"""
+    st.write("### ANOVA Analysis")
+    
+    numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+    cat_cols = df.select_dtypes(include=['object']).columns.tolist()
+    
+    if len(numeric_cols) < 1 or len(cat_cols) < 1:
+        st.warning("Need 1+ numeric and 1+ categorical columns")
+        return None
+    
+    numeric_col = st.selectbox("Numeric Variable", numeric_cols, key="anova_num")
+    categorical_col = st.selectbox("Categorical Variable", cat_cols, key="anova_cat")
+    
+    # Group data
+    groups = [group[numeric_col].dropna().values for name, group in df.groupby(categorical_col)]
+    
+    # Run ANOVA
+    f_stat, p_value = f_oneway(*groups)
+    
+    results = {
+        "F-statistic": f_stat,
+        "p-value": p_value,
+        "Number of Groups": len(groups),
+        "Significant": "Yes" if p_value < 0.05 else "No"
+    }
+    
+    st.write("**ANOVA Results:**")
+    results_df = pd.DataFrame(list(results.items()), columns=['Metric', 'Value'])
+    st.dataframe(results_df, use_container_width=True)
+    
+    # Box plot by group
+    fig, ax = plt.subplots(figsize=(10, 6))
+    df.boxplot(column=numeric_col, by=categorical_col, ax=ax)
+    ax.set_title(f'{numeric_col} by {categorical_col}')
+    st.pyplot(fig)
+    
+    return str(results)
+
+def analyze_confidence_intervals(df):
+    """Calculate confidence intervals"""
+    st.write("### Confidence Interval Analysis")
+    
+    numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+    
+    if len(numeric_cols) < 1:
+        st.warning("Need at least 1 numeric column")
+        return None
+    
+    col = st.selectbox("Select Column", numeric_cols, key="ci_col")
+    confidence = st.slider("Confidence Level", 90, 99, 95) / 100
+    
+    data = df[col].dropna()
+    mean = data.mean()
+    se = data.std() / np.sqrt(len(data))
+    
+    # t-critical value
+    df_val = len(data) - 1
+    t_crit = stats.t.ppf((1 + confidence) / 2, df_val)
+    
+    margin_of_error = t_crit * se
+    ci_lower = mean - margin_of_error
+    ci_upper = mean + margin_of_error
+    
+    results = {
+        "Mean": mean,
+        "Standard Error": se,
+        "Margin of Error": margin_of_error,
+        "CI Lower": ci_lower,
+        "CI Upper": ci_upper,
+        f"CI ({int(confidence*100)}%)": f"[{ci_lower:.4f}, {ci_upper:.4f}]"
+    }
+    
+    st.write("**Confidence Interval Results:**")
+    results_df = pd.DataFrame(list(results.items()), columns=['Metric', 'Value'])
+    st.dataframe(results_df, use_container_width=True)
+    
+    # Visualization
+    fig, ax = plt.subplots(figsize=(10, 6))
+    ax.errorbar(0, mean, yerr=margin_of_error, fmt='o', markersize=10, capsize=5, label=f'Mean +/- {int(confidence*100)}% CI')
+    ax.axhline(y=ci_lower, color='r', linestyle='--', alpha=0.5)
+    ax.axhline(y=ci_upper, color='r', linestyle='--', alpha=0.5)
+    ax.set_ylabel(col)
+    ax.set_title(f'Confidence Interval for {col}')
+    ax.set_xticks([])
+    st.pyplot(fig)
+    
+    return str(results)
+
+def analyze_probability(df):
+    """Analyze probability distributions"""
+    st.write("### Probability & Distribution Analysis")
+    
+    numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+    
+    if len(numeric_cols) < 1:
+        st.warning("Need at least 1 numeric column")
+        return None
+    
+    col = st.selectbox("Select Column", numeric_cols, key="prob_col")
+    data = df[col].dropna()
+    
+    # Fit normal distribution
+    mu, sigma = norm.fit(data)
+    
+    # Normality test
+    shapiro_stat, shapiro_p = stats.shapiro(data)
+    
+    results = {
+        "Mean (mu)": mu,
+        "Std Dev (sigma)": sigma,
+        "Shapiro-Wilk Statistic": shapiro_stat,
+        "Shapiro-Wilk p-value": shapiro_p,
+        "Normal Distribution": "Yes" if shapiro_p > 0.05 else "No"
+    }
+    
+    st.write("**Distribution Analysis:**")
+    results_df = pd.DataFrame(list(results.items()), columns=['Metric', 'Value'])
+    st.dataframe(results_df, use_container_width=True)
+    
+    # Visualization
+    fig, ax = plt.subplots(figsize=(10, 6))
+    ax.hist(data, bins=30, density=True, alpha=0.7, edgecolor='black', label='Data')
+    
+    # Overlay normal distribution
+    x = np.linspace(data.min(), data.max(), 100)
+    ax.plot(x, norm.pdf(x, mu, sigma), 'r-', linewidth=2, label='Normal Fit')
+    
+    ax.set_xlabel(col)
+    ax.set_ylabel('Density')
+    ax.set_title(f'Distribution of {col}')
+    ax.legend()
+    st.pyplot(fig)
+    
+    return str(results)
+
+def analyze_t_tests(df):
+    """Perform various t-tests"""
+    st.write("### T-Test Analysis")
+    
+    numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+    
+    if len(numeric_cols) < 1:
+        st.warning("Need at least 1 numeric column")
+        return None
+    
+    test_type = st.selectbox("T-Test Type", ["One-Sample", "Two-Sample", "Paired"])
+    
+    results = {}
+    
+    if test_type == "One-Sample":
+        col = st.selectbox("Column", numeric_cols, key="t_col")
+        test_mean = st.number_input("Test Mean", value=0.0)
+        
+        t_stat, p_value = stats.ttest_1samp(df[col].dropna(), test_mean)
+        results = {
+            "Test": "One-Sample t-test",
+            "t-statistic": t_stat,
+            "p-value": p_value,
+            "Significant (α=0.05)": "Yes" if p_value < 0.05 else "No"
+        }
+    
+    elif test_type == "Two-Sample":
+        if len(numeric_cols) >= 2:
+            col1 = st.selectbox("Column 1", numeric_cols, key="t_col1")
+            col2 = st.selectbox("Column 2", numeric_cols, key="t_col2", index=1)
+            
+            t_stat, p_value = ttest_ind(df[col1].dropna(), df[col2].dropna())
+            results = {
+                "Test": "Two-Sample t-test",
+                "t-statistic": t_stat,
+                "p-value": p_value,
+                "Significant (α=0.05)": "Yes" if p_value < 0.05 else "No"
+            }
+    
+    elif test_type == "Paired":
+        if len(numeric_cols) >= 2:
+            col1 = st.selectbox("Before", numeric_cols, key="t_before")
+            col2 = st.selectbox("After", numeric_cols, key="t_after", index=1)
+            
+            # Match lengths
+            min_len = min(len(df[col1].dropna()), len(df[col2].dropna()))
+            t_stat, p_value = ttest_rel(df[col1].dropna()[:min_len], df[col2].dropna()[:min_len])
+            results = {
+                "Test": "Paired t-test",
+                "t-statistic": t_stat,
+                "p-value": p_value,
+                "Significant (α=0.05)": "Yes" if p_value < 0.05 else "No"
+            }
+    
+    if results:
+        st.write("**T-Test Results:**")
+        results_df = pd.DataFrame(list(results.items()), columns=['Metric', 'Value'])
+        st.dataframe(results_df, use_container_width=True)
+        return str(results)
+    
+    return None
 
 # ============================================================================
 # HELPER: CALCULATE COSTS
@@ -313,7 +651,6 @@ with st.sidebar:
             student_email = st.text_input("Email:", key="student_email", placeholder="student@example.com")
             student_pass = st.text_input("Password:", type="password", key="student_pass")
             
-            # Terms acceptance
             terms_check = st.checkbox("I agree to the Terms of Service and Privacy Policy", key="terms_agree")
             
             if st.button("Sign In", key="student_signin"):
@@ -463,6 +800,7 @@ else:
             
             data_analysis_mode = False
             df = None
+            stats_results = None
             
             if uploaded_file:
                 if uploaded_file.name.endswith(('jpg', 'jpeg', 'png')):
@@ -478,21 +816,41 @@ else:
                         data_analysis_mode = st.checkbox("Analyze this data")
                         
                         if data_analysis_mode:
-                            st.write("### Quick Analysis")
+                            st.write("### Statistical Analysis")
                             
-                            numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+                            # Run appropriate analysis based on category
+                            if category == "Descriptive Statistics":
+                                numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+                                if numeric_cols:
+                                    col_to_analyze = st.selectbox("Select column to analyze:", numeric_cols)
+                                    
+                                    st.write("**Descriptive Statistics:**")
+                                    stats_dict = calculate_descriptive_stats(df, col_to_analyze)
+                                    stats_df = pd.DataFrame(list(stats_dict.items()), columns=['Statistic', 'Value'])
+                                    st.dataframe(stats_df, use_container_width=True)
+                                    
+                                    st.write("**Visualizations:**")
+                                    fig = create_visualizations(df, col_to_analyze)
+                                    st.pyplot(fig)
+                                    stats_results = str(stats_dict)
                             
-                            if numeric_cols:
-                                col_to_analyze = st.selectbox("Select column to analyze:", numeric_cols)
-                                
-                                st.write("**Descriptive Statistics:**")
-                                stats_dict = calculate_descriptive_stats(df, col_to_analyze)
-                                stats_df = pd.DataFrame(list(stats_dict.items()), columns=['Statistic', 'Value'])
-                                st.dataframe(stats_df, use_container_width=True)
-                                
-                                st.write("**Visualizations:**")
-                                fig = create_visualizations(df, col_to_analyze)
-                                st.pyplot(fig)
+                            elif category == "Hypothesis Testing":
+                                stats_results = analyze_hypothesis_testing(df)
+                            
+                            elif category == "Regression":
+                                stats_results = analyze_regression(df)
+                            
+                            elif category == "ANOVA":
+                                stats_results = analyze_anova(df)
+                            
+                            elif category == "Confidence Intervals":
+                                stats_results = analyze_confidence_intervals(df)
+                            
+                            elif category == "Probability":
+                                stats_results = analyze_probability(df)
+                            
+                            elif category == "T-Tests":
+                                stats_results = analyze_t_tests(df)
             
             st.write("")
             st.write("### Or Type Your Problem")
@@ -511,6 +869,10 @@ else:
             if st.button("SOLVE THIS & LEARN", use_container_width=True):
                 problem_text_final = problem.strip() if problem else ""
                 image_b64 = None
+                
+                # Add stats results to problem text
+                if stats_results:
+                    problem_text_final = f"Here are the statistical analysis results:\n\n{stats_results}\n\nNow please explain these results and what they mean.\n\n{problem_text_final}"
                 
                 if uploaded_file:
                     if uploaded_file.name.endswith(('jpg', 'jpeg', 'png')):
