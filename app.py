@@ -1,15 +1,12 @@
 import streamlit as st
 import requests
-import base64
 import os
-from datetime import datetime
 import pandas as pd
 import numpy as np
 from scipy import stats
-from scipy.stats import ttest_ind, f_oneway, chi2_contingency, shapiro, anderson, kstest, boxcox, yeojohnson
+from scipy.stats import ttest_ind, f_oneway, shapiro, anderson, kstest, boxcox, yeojohnson
 from sklearn.linear_model import LinearRegression
 from sklearn.preprocessing import StandardScaler
-from sklearn.model_selection import train_test_split
 from sklearn.cluster import KMeans
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -21,21 +18,31 @@ st.set_page_config(page_title="Data Insight Studio", layout="wide", initial_side
 CONFIG_FILE = "api_config.txt"
 
 # ============================================================================
+# SESSION STATE
+# ============================================================================
+
+if "user_id" not in st.session_state:
+    st.session_state.user_id = None
+if "user_name" not in st.session_state:
+    st.session_state.user_name = None
+if "api_key" not in st.session_state:
+    st.session_state.api_key = None
+if "current_page" not in st.session_state:
+    st.session_state.current_page = "home"
+
+# ============================================================================
 # API KEY MANAGEMENT
 # ============================================================================
 
 def save_api_key(key):
-    """Save API key to file"""
     try:
         with open(CONFIG_FILE, "w") as f:
             f.write(key.strip())
         return True
-    except Exception as e:
-        st.error(f"Error saving: {str(e)}")
+    except:
         return False
 
 def load_api_key():
-    """Load API key from environment or file"""
     env_key = os.environ.get("ANTHROPIC_API_KEY")
     if env_key:
         return env_key
@@ -50,7 +57,6 @@ def load_api_key():
     return None
 
 def get_api_key():
-    """Get API key from session state or file"""
     if st.session_state.api_key:
         return st.session_state.api_key
     file_key = load_api_key()
@@ -59,52 +65,14 @@ def get_api_key():
         return file_key
     return None
 
-def test_api_key(api_key):
-    """Test if API key is valid"""
-    try:
-        response = requests.post(
-            "https://api.anthropic.com/v1/messages",
-            headers={
-                "Content-Type": "application/json",
-                "x-api-key": api_key,
-                "anthropic-version": "2023-06-01",
-            },
-            json={
-                "model": "claude-opus-4-1-20250805",
-                "max_tokens": 100,
-                "messages": [{"role": "user", "content": "Say 'API works!'"}]
-            },
-            timeout=10
-        )
-        return response.status_code == 200
-    except:
-        return False
-
 # ============================================================================
-# SESSION STATE
-# ============================================================================
-
-if "user_id" not in st.session_state:
-    st.session_state.user_id = None
-if "user_name" not in st.session_state:
-    st.session_state.user_name = None
-if "api_key" not in st.session_state:
-    st.session_state.api_key = load_api_key()
-if "current_page" not in st.session_state:
-    st.session_state.current_page = "home"
-if "api_calls" not in st.session_state:
-    st.session_state.api_calls = 0
-
-# ============================================================================
-# AI PROBLEM SOLVER
+# AI SOLVER
 # ============================================================================
 
 def solve_with_ai(problem_text, category, api_key):
-    """Use Claude API to solve the problem"""
     try:
         if not api_key:
-            st.error("❌ API key not configured!")
-            return None
+            return "❌ ERROR: API key not configured by admin"
         
         response = requests.post(
             "https://api.anthropic.com/v1/messages",
@@ -116,70 +84,205 @@ def solve_with_ai(problem_text, category, api_key):
             json={
                 "model": "claude-opus-4-1-20250805",
                 "max_tokens": 2000,
-                "system": f"You are an expert statistics tutor. Help students understand concepts. Category: {category}",
+                "system": f"You are an expert statistics tutor. Help students understand. Category: {category}",
                 "messages": [{"role": "user", "content": problem_text}]
             },
             timeout=30
         )
         
         if response.status_code == 200:
-            result = response.json()
-            st.session_state.api_calls += 1
-            return result['content'][0]['text']
+            return response.json()['content'][0]['text']
         else:
-            st.error(f"API Error {response.status_code}")
-            return None
+            return f"❌ API Error: {response.status_code}"
     except Exception as e:
-        st.error(f"Error: {str(e)}")
-        return None
+        return f"❌ Error: {str(e)}"
 
 # ============================================================================
-# HELPERS
+# ANALYSIS FUNCTIONS
 # ============================================================================
 
-def read_excel_csv(file):
+def read_file(file):
     try:
         if file.name.endswith('.csv'):
             return pd.read_csv(file)
         elif file.name.endswith(('.xlsx', '.xls')):
             return pd.read_excel(file)
     except Exception as e:
-        st.error(f"Error: {str(e)}")
+        st.error(f"Error reading file: {str(e)}")
         return None
 
-def calculate_descriptive_stats(df, column):
-    return {
-        "Mean": df[column].mean(),
-        "Median": df[column].median(),
-        "Std Dev": df[column].std(),
-        "Min": df[column].min(),
-        "Max": df[column].max(),
-        "Q1": df[column].quantile(0.25),
-        "Q3": df[column].quantile(0.75),
+def descriptive_stats(df):
+    numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+    if not numeric_cols:
+        st.error("No numeric columns found")
+        return
+    
+    col = st.selectbox("Choose column:", numeric_cols, key="desc_col")
+    
+    stats_dict = {
+        "Mean": f"{df[col].mean():.4f}",
+        "Median": f"{df[col].median():.4f}",
+        "Std Dev": f"{df[col].std():.4f}",
+        "Min": f"{df[col].min():.4f}",
+        "Max": f"{df[col].max():.4f}",
         "N": len(df)
     }
-
-def create_visualizations(df, column):
+    
+    st.dataframe(pd.DataFrame(list(stats_dict.items()), columns=['Statistic', 'Value']), use_container_width=True)
+    
     fig, axes = plt.subplots(2, 2, figsize=(12, 10))
-    axes[0, 0].hist(df[column].dropna(), bins=30, edgecolor='black', alpha=0.7)
+    axes[0, 0].hist(df[col].dropna(), bins=30, edgecolor='black')
     axes[0, 0].set_title('Histogram')
-    axes[0, 1].boxplot(df[column].dropna())
+    axes[0, 1].boxplot(df[col].dropna())
     axes[0, 1].set_title('Box Plot')
-    stats.probplot(df[column].dropna(), dist="norm", plot=axes[1, 0])
+    stats.probplot(df[col].dropna(), dist="norm", plot=axes[1, 0])
     axes[1, 0].set_title('Q-Q Plot')
-    df[column].plot(kind='density', ax=axes[1, 1])
+    df[col].plot(kind='density', ax=axes[1, 1])
     axes[1, 1].set_title('Density')
     plt.tight_layout()
-    return fig
+    st.pyplot(fig)
 
-def test_normality(data):
-    data_clean = data.dropna()
-    shapiro_stat, shapiro_p = shapiro(data_clean)
-    return {
+def normality_test(df):
+    numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+    if not numeric_cols:
+        st.error("No numeric columns found")
+        return
+    
+    col = st.selectbox("Choose column:", numeric_cols, key="norm_col")
+    data = df[col].dropna()
+    
+    shapiro_stat, shapiro_p = shapiro(data)
+    
+    results = {
         "Shapiro-Wilk p-value": f"{shapiro_p:.6f}",
-        "Skewness": f"{stats.skew(data_clean):.4f}",
+        "Skewness": f"{stats.skew(data):.4f}",
         "Is Normal?": "Yes ✅" if shapiro_p > 0.05 else "No ❌"
     }
+    
+    st.dataframe(pd.DataFrame(list(results.items()), columns=['Test', 'Result']), use_container_width=True)
+    
+    fig, axes = plt.subplots(2, 2, figsize=(12, 10))
+    axes[0, 0].hist(data, bins=30, edgecolor='black')
+    axes[0, 0].set_title('Original')
+    stats.probplot(data, dist="norm", plot=axes[0, 1])
+    axes[0, 1].set_title('Q-Q Original')
+    axes[1, 0].text(0.5, 0.5, 'Transformations:', ha='center')
+    axes[1, 1].text(0.5, 0.5, 'Try Log, Box-Cox,\nYeo-Johnson', ha='center')
+    plt.tight_layout()
+    st.pyplot(fig)
+
+def regression_analysis(df):
+    numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+    if len(numeric_cols) < 2:
+        st.error("Need at least 2 numeric columns")
+        return
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        x_col = st.selectbox("X (Independent):", numeric_cols, key="x_col")
+    with col2:
+        y_col = st.selectbox("Y (Dependent):", numeric_cols, key="y_col", index=1)
+    
+    data_clean = df[[x_col, y_col]].dropna()
+    X = data_clean[x_col].values.reshape(-1, 1)
+    y = data_clean[y_col].values
+    
+    model = LinearRegression()
+    model.fit(X, y)
+    
+    r_sq = model.score(X, y)
+    slope = model.coef_[0]
+    intercept = model.intercept_
+    
+    results = {
+        "Equation": f"Y = {intercept:.4f} + {slope:.4f}*X",
+        "R²": f"{r_sq:.4f}",
+        "Slope": f"{slope:.4f}"
+    }
+    
+    st.dataframe(pd.DataFrame(list(results.items()), columns=['Metric', 'Value']), use_container_width=True)
+    
+    fig, ax = plt.subplots(figsize=(10, 6))
+    ax.scatter(X, y, alpha=0.6)
+    X_line = np.linspace(X.min(), X.max(), 100).reshape(-1, 1)
+    y_line = model.predict(X_line)
+    ax.plot(X_line, y_line, 'r-', label=f'Y = {intercept:.2f} + {slope:.2f}*X')
+    ax.set_xlabel(x_col)
+    ax.set_ylabel(y_col)
+    ax.legend()
+    st.pyplot(fig)
+
+def correlation_analysis(df):
+    numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+    if len(numeric_cols) < 2:
+        st.error("Need at least 2 numeric columns")
+        return
+    
+    corr = df[numeric_cols].corr()
+    st.dataframe(corr, use_container_width=True)
+    
+    fig, ax = plt.subplots(figsize=(10, 8))
+    sns.heatmap(corr, annot=True, fmt='.2f', cmap='coolwarm', ax=ax)
+    st.pyplot(fig)
+
+def anova_analysis(df):
+    numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+    cat_cols = df.select_dtypes(include=['object']).columns.tolist()
+    
+    if not numeric_cols or not cat_cols:
+        st.error("Need numeric and categorical columns")
+        return
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        num_col = st.selectbox("Numeric:", numeric_cols, key="anova_num")
+    with col2:
+        cat_col = st.selectbox("Category:", cat_cols, key="anova_cat")
+    
+    groups = [group[num_col].dropna().values for name, group in df.groupby(cat_col)]
+    f_stat, p_value = f_oneway(*groups)
+    
+    results = {
+        "F-statistic": f"{f_stat:.4f}",
+        "p-value": f"{p_value:.6f}",
+        "Significant": "Yes ✅" if p_value < 0.05 else "No"
+    }
+    
+    st.dataframe(pd.DataFrame(list(results.items()), columns=['Metric', 'Value']), use_container_width=True)
+    
+    fig, ax = plt.subplots(figsize=(10, 6))
+    df.boxplot(column=num_col, by=cat_col, ax=ax)
+    st.pyplot(fig)
+
+def clustering_analysis(df):
+    numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+    if len(numeric_cols) < 2:
+        st.error("Need at least 2 numeric columns")
+        return
+    
+    n_clusters = st.slider("Number of clusters:", 2, 10, 3, key="clusters")
+    
+    X = df[numeric_cols].fillna(df[numeric_cols].mean())
+    scaler = StandardScaler()
+    X_scaled = scaler.fit_transform(X)
+    
+    kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
+    clusters = kmeans.fit_predict(X_scaled)
+    
+    results = {
+        "Clusters": n_clusters,
+        "Inertia": f"{kmeans.inertia_:.4f}",
+        "Samples": len(df)
+    }
+    
+    st.dataframe(pd.DataFrame(list(results.items()), columns=['Metric', 'Value']), use_container_width=True)
+    
+    fig, ax = plt.subplots(figsize=(10, 6))
+    scatter = ax.scatter(X[numeric_cols[0]], X[numeric_cols[1]], c=clusters, cmap='viridis', s=50)
+    ax.set_xlabel(numeric_cols[0])
+    ax.set_ylabel(numeric_cols[1])
+    plt.colorbar(scatter, ax=ax)
+    st.pyplot(fig)
 
 # ============================================================================
 # SIDEBAR
@@ -189,12 +292,11 @@ with st.sidebar:
     try:
         st.image("logo_1.png", width=250)
     except:
-        st.title("📊 Data Insight Studio")
+        st.title("📊 Data Insight")
     st.divider()
     
     if not st.session_state.user_id:
-        st.write("### Login")
-        login_type = st.radio("Select:", ["Student", "Admin"], key="login_type")
+        login_type = st.radio("Login as:", ["Student", "Admin"])
         
         if login_type == "Student":
             st.write("Demo: student@example.com / password")
@@ -226,9 +328,10 @@ with st.sidebar:
         if st.button("📚 Homework", use_container_width=True):
             st.session_state.current_page = "homework"
             st.rerun()
-        if st.button("⚙️ Admin", use_container_width=True):
-            st.session_state.current_page = "admin"
-            st.rerun()
+        if st.session_state.user_id == "admin":
+            if st.button("⚙️ Admin", use_container_width=True):
+                st.session_state.current_page = "admin"
+                st.rerun()
         
         st.divider()
         if st.button("🚪 Sign Out", use_container_width=True):
@@ -239,227 +342,169 @@ with st.sidebar:
 # LANDING PAGE
 # ============================================================================
 
-if st.session_state.current_page == "home" and not st.session_state.user_id:
+if not st.session_state.user_id and st.session_state.current_page == "home":
     st.title("📊 Data Insight Studio")
-    st.subheader("Professional Statistics & Machine Learning Helper")
-    st.divider()
+    st.subheader("Professional Statistics & ML Helper")
     
     col1, col2 = st.columns([2, 1])
     with col1:
-        st.write("""
-        ### Welcome! 🎓
-        Master statistics with AI-guided learning.
-        Upload data, ask questions, get instant help!
-        
-        **Pricing:** $14.99/term
-        """)
+        st.write("Master statistics with AI guidance. Upload data, ask questions, learn!")
     with col2:
         st.warning("⚖️ Do NOT use on exams!")
     
     st.divider()
-    st.write("## 🚀 Tools")
+    st.write("## Tools Available")
     cols = st.columns(2)
     tools = [
-        ("📊 Descriptive Stats", "Mean, median, SD, plots"),
+        ("📊 Descriptive Stats", "Mean, median, visualizations"),
         ("✨ Normality Testing", "Test & transform data"),
-        ("📉 Regression", "Linear regression analysis"),
-        ("📋 Correlation", "Heatmaps & relationships"),
+        ("📉 Regression", "Linear regression"),
+        ("📋 Correlation", "Heatmaps"),
         ("📌 ANOVA", "Group comparisons"),
         ("📊 Clustering", "K-Means patterns"),
     ]
-    for idx, (title, desc) in enumerate(tools):
-        with cols[idx % 2]:
+    for i, (title, desc) in enumerate(tools):
+        with cols[i % 2]:
             st.write(f"### {title}\n{desc}")
     
-    st.divider()
     st.success("👉 Sign in to start!")
 
 # ============================================================================
-# HOMEWORK HELP PAGE
+# HOMEWORK HELP
 # ============================================================================
 
-elif st.session_state.current_page == "homework" and st.session_state.user_id:
+elif st.session_state.user_id and st.session_state.current_page == "homework":
     st.header("📚 Homework Help")
-    st.write("Upload file or type question → Select analysis → Get results!")
-    st.divider()
     
-    st.write("### Select Analysis Type:")
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        if st.button("📊 Descriptive\nStatistics", use_container_width=True):
-            st.session_state.selected_category = "Descriptive Statistics"
-    with col2:
-        if st.button("✨ Normality\nTesting", use_container_width=True):
-            st.session_state.selected_category = "Normality Testing"
-    with col3:
-        if st.button("📉 Regression\nAnalysis", use_container_width=True):
-            st.session_state.selected_category = "Regression Analysis"
-    
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        if st.button("📋 Correlation\nAnalysis", use_container_width=True):
-            st.session_state.selected_category = "Correlation Analysis"
-    with col2:
-        if st.button("📌 ANOVA", use_container_width=True):
-            st.session_state.selected_category = "ANOVA"
-    with col3:
-        if st.button("📊 Clustering", use_container_width=True):
-            st.session_state.selected_category = "Clustering"
+    # Input section
+    st.write("### 1️⃣ Choose Analysis Type:")
+    analysis_type = st.selectbox(
+        "Select:",
+        ["Descriptive Statistics", "Normality Testing", "Regression Analysis", 
+         "Correlation Analysis", "ANOVA", "Clustering Analysis"],
+        key="analysis_select"
+    )
     
     st.divider()
     
+    st.write("### 2️⃣ Upload File OR Type Question:")
     col1, col2 = st.columns([1, 1])
+    
     with col1:
-        uploaded_file = st.file_uploader("Upload:", type=["csv", "xlsx", "xls", "jpg", "jpeg", "png"])
+        uploaded_file = st.file_uploader("Upload CSV/Excel/Image:", type=["csv", "xlsx", "xls", "jpg", "jpeg", "png"])
+    
     with col2:
-        problem_text = st.text_area("Or type question:", height=100, placeholder="Type your question...")
+        question = st.text_area("Or type question:", placeholder="Type your statistics question here...", height=120)
     
     st.divider()
     
-    if "selected_category" in st.session_state:
-        st.write(f"### {st.session_state.selected_category}")
-        
-        df = None
+    st.write("### 3️⃣ Get Results:")
+    
+    if st.button("🚀 RUN ANALYSIS", use_container_width=True, key="run_button"):
         if uploaded_file:
             if uploaded_file.name.endswith(('jpg', 'jpeg', 'png')):
                 st.image(uploaded_file, use_container_width=True)
+                st.info("Image uploaded")
             else:
-                df = read_excel_csv(uploaded_file)
+                df = read_file(uploaded_file)
                 if df is not None:
+                    st.write("**Data Preview:**")
                     st.dataframe(df.head(), use_container_width=True)
+                    
+                    st.divider()
+                    st.write(f"### {analysis_type}")
+                    
+                    try:
+                        if analysis_type == "Descriptive Statistics":
+                            descriptive_stats(df)
+                        elif analysis_type == "Normality Testing":
+                            normality_test(df)
+                        elif analysis_type == "Regression Analysis":
+                            regression_analysis(df)
+                        elif analysis_type == "Correlation Analysis":
+                            correlation_analysis(df)
+                        elif analysis_type == "ANOVA":
+                            anova_analysis(df)
+                        elif analysis_type == "Clustering Analysis":
+                            clustering_analysis(df)
+                        st.success("✅ Analysis complete!")
+                    except Exception as e:
+                        st.error(f"Error: {str(e)}")
         
-        if st.button("🚀 RUN ANALYSIS", use_container_width=True):
-            if df is not None:
-                try:
-                    if st.session_state.selected_category == "Descriptive Statistics":
-                        numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
-                        if numeric_cols:
-                            col = numeric_cols[0]
-                            st.dataframe(pd.DataFrame(list(calculate_descriptive_stats(df, col).items()), columns=['Stat', 'Value']), use_container_width=True)
-                            st.pyplot(create_visualizations(df, col))
-                except Exception as e:
-                    st.error(f"Error: {str(e)}")
-            elif problem_text:
-                api_key = get_api_key()
-                if not api_key:
-                    st.error("❌ Admin must configure API key!")
-                else:
-                    with st.spinner("🤖 Thinking..."):
-                        solution = solve_with_ai(problem_text, st.session_state.selected_category, api_key)
-                    if solution:
-                        st.markdown(solution)
-                        st.success("✅ Done!")
+        elif question:
+            api_key = get_api_key()
+            if not api_key:
+                st.error("❌ Admin must set API key first!")
             else:
-                st.warning("Upload file or type question!")
-    else:
-        st.info("👆 Select analysis type!")
+                with st.spinner("🤖 Thinking..."):
+                    answer = solve_with_ai(question, analysis_type, api_key)
+                st.divider()
+                st.markdown(answer)
+                st.success("✅ Answer provided!")
+        
+        else:
+            st.error("❌ Please upload file or type question!")
 
 # ============================================================================
-# HOME PAGE (LOGGED IN)
+# HOME (LOGGED IN)
 # ============================================================================
 
-elif st.session_state.current_page == "home" and st.session_state.user_id:
+elif st.session_state.user_id and st.session_state.current_page == "home":
     st.title("📊 Data Insight Studio")
-    st.write("Welcome! Click **Homework** in sidebar to get started.")
+    st.write("Click **Homework** in sidebar to get started!")
 
 # ============================================================================
 # ADMIN PANEL
 # ============================================================================
 
-elif st.session_state.current_page == "admin" and st.session_state.user_id == "admin":
+elif st.session_state.user_id == "admin" and st.session_state.current_page == "admin":
     st.title("⚙️ Admin Panel")
     st.divider()
     
-    st.write("### 🔑 API Key Configuration")
+    st.write("### 🔑 Configure API Key")
     
-    # Get current key
     current_key = load_api_key()
-    
-    # Show status
     if current_key:
-        st.success(f"✅ API Key Active: {current_key[:20]}...")
+        st.success(f"✅ Active: {current_key[:20]}...")
     else:
         st.warning("⚠️ No API key configured")
     
     st.divider()
     
-    # Input for new key
-    st.write("**Enter or Update API Key:**")
-    new_api_key = st.text_input(
-        "API Key (sk-ant-...)",
+    api_key_input = st.text_input(
+        "API Key (sk-ant-...):",
         type="password",
         value=current_key or "",
-        placeholder="sk-ant-...",
         help="Get from https://console.anthropic.com/account/keys"
     )
     
-    col1, col2 = st.columns([1, 1])
-    
+    col1, col2 = st.columns(2)
     with col1:
-        if st.button("💾 Save API Key", use_container_width=True):
-            if new_api_key:
-                if save_api_key(new_api_key):
-                    st.session_state.api_key = new_api_key
-                    st.success("✅ API Key Saved Successfully!")
-                else:
-                    st.error("❌ Failed to save API key")
+        if st.button("💾 Save", use_container_width=True):
+            if api_key_input:
+                if save_api_key(api_key_input):
+                    st.session_state.api_key = api_key_input
+                    st.success("✅ Saved!")
+                    st.rerun()
             else:
-                st.error("❌ Please enter API key")
+                st.error("Enter key first")
     
     with col2:
-        if st.button("🧪 Test API Key", use_container_width=True):
-            if new_api_key:
-                with st.spinner("Testing..."):
-                    if test_api_key(new_api_key):
-                        st.success("✅ API Key Works!")
-                    else:
-                        st.error("❌ API Key Invalid!")
-            else:
-                st.error("❌ Please enter API key first")
+        if st.button("🗑️ Delete", use_container_width=True):
+            try:
+                if os.path.exists(CONFIG_FILE):
+                    os.remove(CONFIG_FILE)
+                st.session_state.api_key = None
+                st.success("✅ Deleted!")
+                st.rerun()
+            except:
+                st.error("Error")
     
     st.divider()
-    
-    # Clear key option
-    if st.button("🗑️ Delete API Key", use_container_width=True):
-        try:
-            if os.path.exists(CONFIG_FILE):
-                os.remove(CONFIG_FILE)
-            st.session_state.api_key = None
-            st.success("✅ API Key Deleted")
-        except:
-            st.error("❌ Error deleting key")
-    
-    st.divider()
-    
-    # Metrics
-    st.write("### 📊 Metrics")
-    col1, col2 = st.columns(2)
-    col1.metric("API Calls", st.session_state.api_calls)
-    col2.metric("Students", "Ready!")
-    
-    st.divider()
-    
-    # Instructions
-    st.write("### 📝 Setup Instructions")
+    st.write("### Instructions:")
     st.markdown("""
-    1. Get API key from: https://console.anthropic.com/account/keys
-    2. Paste key above
-    3. Click "Save API Key"
-    4. Click "Test API Key" to verify
-    5. Done! ✅
-    
-    Students can now use the app to ask questions!
+    1. Get key: https://console.anthropic.com/account/keys
+    2. Paste above
+    3. Click Save
+    4. Done! ✅
     """)
-
-# ============================================================================
-# FALLBACK
-# ============================================================================
-
-else:
-    if st.session_state.user_id:
-        st.title("📊 Data Insight Studio")
-        st.write("Select menu option in sidebar")
-    else:
-        st.title("Please Sign In")
-        st.write("Use sidebar to login")
