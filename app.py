@@ -102,6 +102,26 @@ def calculate_descriptive_stats(df, column):
     }
     return stats_dict
 
+def create_visualizations(df, column):
+    fig, axes = plt.subplots(2, 2, figsize=(12, 10))
+    axes[0, 0].hist(df[column].dropna(), bins=30, edgecolor='black', alpha=0.7)
+    axes[0, 0].set_title(f'Histogram of {column}')
+    axes[0, 0].set_xlabel('Value')
+    axes[0, 0].set_ylabel('Frequency')
+    
+    axes[0, 1].boxplot(df[column].dropna())
+    axes[0, 1].set_title(f'Box Plot of {column}')
+    axes[0, 1].set_ylabel('Value')
+    
+    stats.probplot(df[column].dropna(), dist="norm", plot=axes[1, 0])
+    axes[1, 0].set_title('Q-Q Plot')
+    
+    df[column].plot(kind='density', ax=axes[1, 1])
+    axes[1, 1].set_title(f'Density Plot of {column}')
+    
+    plt.tight_layout()
+    return fig
+
 def test_normality(data):
     """Comprehensive normality testing"""
     data_clean = data.dropna()
@@ -112,14 +132,12 @@ def test_normality(data):
     kurtosis = stats.kurtosis(data_clean)
     
     results = {
-        "Shapiro-Wilk Statistic": shapiro_stat,
         "Shapiro-Wilk p-value": shapiro_p,
-        "Anderson-Darling Statistic": anderson_result.statistic,
-        "K-S Statistic": ks_stat,
+        "Anderson-Darling Stat": anderson_result.statistic,
         "K-S p-value": ks_p,
         "Skewness": skewness,
         "Kurtosis": kurtosis,
-        "Normal Distribution": "Yes" if shapiro_p > 0.05 else "No"
+        "Is Normal?": "Yes" if shapiro_p > 0.05 else "No"
     }
     return results
 
@@ -153,20 +171,40 @@ def apply_transformation(data, method):
     elif method == "Yeo-Johnson":
         try:
             transformed, lam = yeojohnson(data_clean)
-            return transformed, f"Yeo-Johnson (λ={lam:.4f}): Works with any values. More flexible than Box-Cox."
+            return transformed, f"Yeo-Johnson (λ={lam:.4f}): Works with any values."
         except:
             st.warning("Yeo-Johnson failed!")
             return None, ""
     elif method == "Z-Score":
         mean = data_clean.mean()
         std = data_clean.std()
-        return (data_clean - mean) / std, "Z-Score: Centers data (mean=0) and scales by std dev (std=1)."
+        return (data_clean - mean) / std, "Z-Score: Centers (mean=0) and scales (std=1)."
     elif method == "Min-Max":
         min_val = data_clean.min()
         max_val = data_clean.max()
-        return (data_clean - min_val) / (max_val - min_val), "Min-Max: Scales data to [0,1] range."
+        return (data_clean - min_val) / (max_val - min_val), "Min-Max: Scales data to [0,1]."
     
     return None, ""
+
+def analyze_descriptive_stats(df):
+    st.write("### 📊 Descriptive Statistics")
+    numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+    
+    if not numeric_cols:
+        st.warning("Need numeric columns")
+        return None
+    
+    column = st.selectbox("Select Column:", numeric_cols, key="desc_col")
+    stats_dict = calculate_descriptive_stats(df, column)
+    
+    st.write("**Statistics:**")
+    st.dataframe(pd.DataFrame(list(stats_dict.items()), columns=['Statistic', 'Value']), use_container_width=True)
+    
+    st.write("**Visualizations:**")
+    fig = create_visualizations(df, column)
+    st.pyplot(fig)
+    
+    return str(stats_dict)
 
 def analyze_normality_testing(df):
     st.write("### ✨ Normality Testing & Transformations")
@@ -182,17 +220,16 @@ def analyze_normality_testing(df):
     # Test normality
     st.write("#### 1️⃣ Normality Tests")
     results = test_normality(data)
-    results_df = pd.DataFrame(list(results.items()), columns=['Test', 'Result'])
-    st.dataframe(results_df, use_container_width=True)
+    st.dataframe(pd.DataFrame(list(results.items()), columns=['Test', 'Result']), use_container_width=True)
     
     # Visualization
-    st.write("#### 2️⃣ Original Data Visualization")
+    st.write("#### 2️⃣ Original Data")
     fig, axes = plt.subplots(2, 2, figsize=(12, 10))
     axes[0, 0].hist(data, bins=30, edgecolor='black', alpha=0.7, density=True)
     mu, sigma = stats.norm.fit(data)
     x = np.linspace(data.min(), data.max(), 100)
     axes[0, 0].plot(x, stats.norm.pdf(x, mu, sigma), 'r-', linewidth=2)
-    axes[0, 0].set_title('Histogram with Normal Curve')
+    axes[0, 0].set_title('Histogram')
     
     stats.probplot(data, dist="norm", plot=axes[0, 1])
     axes[0, 1].set_title('Q-Q Plot')
@@ -208,33 +245,32 @@ def analyze_normality_testing(df):
     
     # Transformations
     st.write("#### 3️⃣ Apply Transformation")
-    method = st.selectbox("Choose Method:", ["Log", "Square Root", "Box-Cox", "Yeo-Johnson", "Z-Score", "Min-Max"])
+    method = st.selectbox("Method:", ["Log", "Square Root", "Box-Cox", "Yeo-Johnson", "Z-Score", "Min-Max"])
     
     transformed, explanation = apply_transformation(data, method)
     if transformed is not None:
         st.info(explanation)
         
-        st.write("#### 4️⃣ Transformed Data Analysis")
+        st.write("#### 4️⃣ Transformed Data")
         trans_results = test_normality(pd.Series(transformed))
-        trans_df = pd.DataFrame(list(trans_results.items()), columns=['Test', 'Result'])
-        st.dataframe(trans_df, use_container_width=True)
+        st.dataframe(pd.DataFrame(list(trans_results.items()), columns=['Test', 'Result']), use_container_width=True)
         
-        st.write("#### 5️⃣ Before & After Comparison")
+        st.write("#### 5️⃣ Before & After")
         fig, axes = plt.subplots(2, 3, figsize=(15, 10))
         
         axes[0, 0].hist(data, bins=30, edgecolor='black', alpha=0.7)
-        axes[0, 0].set_title('Original: Histogram')
+        axes[0, 0].set_title('Original')
         stats.probplot(data, dist="norm", plot=axes[0, 1])
-        axes[0, 1].set_title('Original: Q-Q')
+        axes[0, 1].set_title('Original Q-Q')
         data.plot(kind='density', ax=axes[0, 2])
-        axes[0, 2].set_title('Original: Density')
+        axes[0, 2].set_title('Original Density')
         
         axes[1, 0].hist(transformed, bins=30, edgecolor='black', alpha=0.7)
-        axes[1, 0].set_title('Transformed: Histogram')
+        axes[1, 0].set_title('Transformed')
         stats.probplot(pd.Series(transformed), dist="norm", plot=axes[1, 1])
-        axes[1, 1].set_title('Transformed: Q-Q')
+        axes[1, 1].set_title('Transformed Q-Q')
         pd.Series(transformed).plot(kind='density', ax=axes[1, 2])
-        axes[1, 2].set_title('Transformed: Density')
+        axes[1, 2].set_title('Transformed Density')
         
         plt.tight_layout()
         st.pyplot(fig)
@@ -242,6 +278,137 @@ def analyze_normality_testing(df):
         return str(trans_results)
     
     return None
+
+def analyze_regression(df):
+    st.write("### 📉 Regression Analysis")
+    numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+    
+    if len(numeric_cols) < 2:
+        st.warning("Need at least 2 numeric columns")
+        return None
+    
+    x_col = st.selectbox("X (Independent):", numeric_cols, key="reg_x")
+    y_col = st.selectbox("Y (Dependent):", numeric_cols, key="reg_y", index=1 if len(numeric_cols) > 1 else 0)
+    
+    data_clean = df[[x_col, y_col]].dropna()
+    X = data_clean[x_col].values.reshape(-1, 1)
+    y = data_clean[y_col].values
+    
+    model = LinearRegression()
+    model.fit(X, y)
+    
+    r_squared = model.score(X, y)
+    slope = model.coef_[0]
+    intercept = model.intercept_
+    
+    results = {
+        "Equation": f"Y = {intercept:.4f} + {slope:.4f}*X",
+        "R-squared": r_squared,
+        "Slope": slope,
+        "Intercept": intercept,
+    }
+    
+    st.write("**Results:**")
+    st.dataframe(pd.DataFrame(list(results.items()), columns=['Metric', 'Value']), use_container_width=True)
+    
+    fig, ax = plt.subplots(figsize=(10, 6))
+    ax.scatter(X, y, alpha=0.6, label='Data')
+    X_line = np.linspace(X.min(), X.max(), 100).reshape(-1, 1)
+    y_line = model.predict(X_line)
+    ax.plot(X_line, y_line, 'r-', label=f'Fit: Y = {intercept:.2f} + {slope:.2f}*X')
+    ax.set_xlabel(x_col)
+    ax.set_ylabel(y_col)
+    ax.set_title('Linear Regression')
+    ax.legend()
+    st.pyplot(fig)
+    
+    return str(results)
+
+def analyze_correlation(df):
+    st.write("### 📋 Correlation Analysis")
+    numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+    
+    if len(numeric_cols) < 2:
+        st.warning("Need at least 2 numeric columns")
+        return None
+    
+    corr = df[numeric_cols].corr()
+    st.write("**Correlation Matrix:**")
+    st.dataframe(corr, use_container_width=True)
+    
+    fig, ax = plt.subplots(figsize=(10, 8))
+    sns.heatmap(corr, annot=True, fmt='.2f', cmap='coolwarm', center=0, ax=ax)
+    ax.set_title('Correlation Heatmap')
+    st.pyplot(fig)
+    
+    return str(corr)
+
+def analyze_anova(df):
+    st.write("### 📌 ANOVA Analysis")
+    numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+    cat_cols = df.select_dtypes(include=['object']).columns.tolist()
+    
+    if len(numeric_cols) < 1 or len(cat_cols) < 1:
+        st.warning("Need numeric and categorical columns")
+        return None
+    
+    num_col = st.selectbox("Numeric Variable:", numeric_cols, key="anova_num")
+    cat_col = st.selectbox("Categorical Variable:", cat_cols, key="anova_cat")
+    
+    groups = [group[num_col].dropna().values for name, group in df.groupby(cat_col)]
+    f_stat, p_value = f_oneway(*groups)
+    
+    results = {
+        "F-statistic": f_stat,
+        "p-value": p_value,
+        "Significant": "Yes" if p_value < 0.05 else "No"
+    }
+    
+    st.write("**Results:**")
+    st.dataframe(pd.DataFrame(list(results.items()), columns=['Metric', 'Value']), use_container_width=True)
+    
+    fig, ax = plt.subplots(figsize=(10, 6))
+    df.boxplot(column=num_col, by=cat_col, ax=ax)
+    st.pyplot(fig)
+    
+    return str(results)
+
+def analyze_clustering(df):
+    st.write("### 📊 Clustering Analysis")
+    numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+    
+    if len(numeric_cols) < 2:
+        st.warning("Need at least 2 numeric columns")
+        return None
+    
+    n_clusters = st.slider("Number of Clusters:", 2, 10, 3, key="clusters")
+    
+    X = df[numeric_cols].fillna(df[numeric_cols].mean())
+    scaler = StandardScaler()
+    X_scaled = scaler.fit_transform(X)
+    
+    kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
+    clusters = kmeans.fit_predict(X_scaled)
+    
+    results = {
+        "Number of Clusters": n_clusters,
+        "Inertia": kmeans.inertia_,
+        "Samples": len(df)
+    }
+    
+    st.write("**Results:**")
+    st.dataframe(pd.DataFrame(list(results.items()), columns=['Metric', 'Value']), use_container_width=True)
+    
+    if len(numeric_cols) >= 2:
+        fig, ax = plt.subplots(figsize=(10, 6))
+        scatter = ax.scatter(X[numeric_cols[0]], X[numeric_cols[1]], c=clusters, cmap='viridis', s=50)
+        ax.set_xlabel(numeric_cols[0])
+        ax.set_ylabel(numeric_cols[1])
+        ax.set_title(f'K-Means Clustering (k={n_clusters})')
+        plt.colorbar(scatter, ax=ax)
+        st.pyplot(fig)
+    
+    return str(results)
 
 # ============================================================================
 # SIDEBAR
@@ -269,7 +436,7 @@ with st.sidebar:
                     st.session_state.user_name = "Student"
                     st.rerun()
                 else:
-                    st.error("Invalid credentials")
+                    st.error("Invalid")
         else:
             pwd = st.text_input("Password:", type="password", key="admin_pwd")
             if st.button("Sign In", use_container_width=True):
@@ -335,7 +502,7 @@ if st.session_state.current_page == "home" and not st.session_state.user_id:
         ("📈 Hypothesis Testing", "t-tests, chi-square, p-values"),
         ("📉 Regression Analysis", "Linear regression, R², predictions"),
         ("📌 ANOVA", "Group comparisons, F-statistic"),
-        ("✨ Normality Testing", "Test for normality, transformations"),
+        ("✨ Normality Testing", "Test for normality, transformations, sampling"),
         ("🤖 Machine Learning", "Random Forest, Gradient Boosting"),
         ("🔮 Predictive Modeling", "Train/test splits, accuracy"),
         ("📊 Clustering", "K-Means analysis, patterns"),
@@ -363,7 +530,7 @@ if st.session_state.current_page == "home" and not st.session_state.user_id:
         st.write("Step-by-step explanations, learning mode, plain language")
     with fcols[2]:
         st.write("### 🎯 Complete Toolkit")
-        st.write("14+ analysis types, ML algorithms, data prep")
+        st.write("12+ analysis types, ML algorithms, data prep")
     
     st.divider()
     st.success("## 👉 Sign in above to get started! →")
@@ -388,55 +555,55 @@ elif st.session_state.user_id:
     
     elif current_page == "homework":
         st.header("📚 Homework Help")
-        st.write("Upload data and select analysis type")
+        st.write("Choose analysis type, upload data, get results!")
         st.divider()
         
-        current_api_key = get_api_key()
+        # Select analysis type FIRST
+        st.write("### Step 1: Select Analysis Type")
+        category = st.selectbox("Choose Analysis:", [
+            "Descriptive Statistics",
+            "Normality Testing & Transformations",
+            "Regression Analysis",
+            "Correlation Analysis",
+            "ANOVA",
+            "Clustering Analysis"
+        ], key="main_category")
         
-        if not current_api_key:
-            st.warning("API key not configured. Admin: configure in environment.")
-        else:
-            col1, col2 = st.columns(2)
-            with col1:
-                category = st.selectbox("Analysis Type:", [
-                    "Descriptive Statistics",
-                    "Normality Testing",
-                    "Regression",
-                    "Correlation"
-                ])
-            
-            st.write("### Upload Data")
-            uploaded_file = st.file_uploader("Choose file:", type=["csv", "xlsx", "xls", "jpg", "jpeg", "png"])
-            
-            df = None
-            if uploaded_file:
-                if uploaded_file.name.endswith(('jpg', 'jpeg', 'png')):
-                    st.image(uploaded_file, use_container_width=True)
-                else:
-                    df = read_excel_csv(uploaded_file)
-                    if df is not None:
-                        st.write("**Preview:**")
-                        st.dataframe(df.head(), use_container_width=True)
-                        
-                        if st.checkbox("Analyze this data"):
+        st.divider()
+        
+        # Upload file
+        st.write("### Step 2: Upload Data")
+        uploaded_file = st.file_uploader("Choose file:", type=["csv", "xlsx", "xls", "jpg", "jpeg", "png"])
+        
+        if uploaded_file:
+            if uploaded_file.name.endswith(('jpg', 'jpeg', 'png')):
+                st.image(uploaded_file, use_container_width=True)
+                st.write("Image uploaded. Analyze manually or ask AI for help.")
+            else:
+                df = read_excel_csv(uploaded_file)
+                if df is not None:
+                    st.write("**Data Preview:**")
+                    st.dataframe(df.head(), use_container_width=True)
+                    
+                    st.divider()
+                    st.write("### Step 3: Analyze")
+                    
+                    if st.checkbox("Run Analysis"):
+                        try:
                             if category == "Descriptive Statistics":
-                                numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
-                                if numeric_cols:
-                                    col = st.selectbox("Column:", numeric_cols)
-                                    stats_dict = calculate_descriptive_stats(df, col)
-                                    st.dataframe(pd.DataFrame(list(stats_dict.items()), columns=['Stat', 'Value']), use_container_width=True)
-                            
-                            elif category == "Normality Testing":
+                                analyze_descriptive_stats(df)
+                            elif category == "Normality Testing & Transformations":
                                 analyze_normality_testing(df)
-                            
-                            elif category == "Correlation":
-                                numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
-                                if len(numeric_cols) >= 2:
-                                    corr = df[numeric_cols].corr()
-                                    st.dataframe(corr, use_container_width=True)
-                                    fig, ax = plt.subplots(figsize=(10, 8))
-                                    sns.heatmap(corr, annot=True, fmt='.2f', cmap='coolwarm', ax=ax)
-                                    st.pyplot(fig)
+                            elif category == "Regression Analysis":
+                                analyze_regression(df)
+                            elif category == "Correlation Analysis":
+                                analyze_correlation(df)
+                            elif category == "ANOVA":
+                                analyze_anova(df)
+                            elif category == "Clustering Analysis":
+                                analyze_clustering(df)
+                        except Exception as e:
+                            st.error(f"Error: {str(e)}")
     
     elif current_page == "resources":
         st.header("📈 Resources")
@@ -452,7 +619,7 @@ if st.session_state.user_id == "admin":
     api_key = st.text_input("API Key:", type="password", value=load_api_key() or "")
     if api_key and save_api_key(api_key):
         st.session_state.api_key = api_key
-        st.success("Saved!")
+        st.success("✅ Saved!")
     
     col1, col2 = st.columns(2)
     col1.metric("API Calls", st.session_state.api_calls)
