@@ -67,6 +67,69 @@ if "api_calls" not in st.session_state:
     st.session_state.api_calls = 0
 
 # ============================================================================
+# AI PROBLEM SOLVER
+# ============================================================================
+
+def solve_with_ai(problem_text, category, api_key):
+    """Use Claude API to solve the problem"""
+    try:
+        if not api_key:
+            st.error("❌ API key not configured. Admin: add API key in settings.")
+            return None
+        
+        if not api_key.startswith("sk-ant-"):
+            st.error("❌ Invalid API key format")
+            return None
+        
+        system_prompt = f"""You are an expert statistics tutor. Help students UNDERSTAND concepts.
+
+IMPORTANT:
+1. Show step-by-step work
+2. Explain the WHY
+3. Use clear language
+4. For multiple choice: explain why each option is correct/wrong
+
+Category: {category}"""
+        
+        text_prompt = f"""Answer this statistics problem step-by-step.
+
+PROBLEM: {problem_text}
+
+Provide:
+1. Concept explanation
+2. Step-by-step solution
+3. Final answer with explanation
+4. Why this matters"""
+        
+        response = requests.post(
+            "https://api.anthropic.com/v1/messages",
+            headers={
+                "Content-Type": "application/json",
+                "x-api-key": api_key,
+                "anthropic-version": "2023-06-01",
+            },
+            json={
+                "model": "claude-opus-4-1-20250805",
+                "max_tokens": 2000,
+                "system": system_prompt,
+                "messages": [{"role": "user", "content": text_prompt}]
+            },
+            timeout=30
+        )
+        
+        if response.status_code == 200:
+            result = response.json()
+            solution_text = result['content'][0]['text']
+            st.session_state.api_calls += 1
+            return solution_text
+        else:
+            st.error(f"❌ API Error {response.status_code}: {response.text}")
+            return None
+    except Exception as e:
+        st.error(f"❌ Error: {str(e)}")
+        return None
+
+# ============================================================================
 # HELPER FUNCTIONS
 # ============================================================================
 
@@ -416,7 +479,7 @@ if st.session_state.current_page == "home" and not st.session_state.user_id:
         ### Welcome! 🎓
         
         Master statistics with AI-guided learning.
-        Upload data, choose analysis, learn step-by-step!
+        Upload data, type questions, choose analysis, learn step-by-step!
         
         **Pricing:** $14.99/term | **Academic Focus**
         """)
@@ -449,10 +512,10 @@ if st.session_state.current_page == "home" and not st.session_state.user_id:
 
 elif st.session_state.current_page == "homework" and st.session_state.user_id:
     st.header("📚 Homework Help")
-    st.write("Upload file, enter text, choose analysis type, get results!")
+    st.write("Upload file, type question, choose analysis type, get results!")
     st.divider()
     
-    # Top section: Category selection
+    # Category selection
     st.write("### Select Analysis Type:")
     col1, col2, col3 = st.columns(3)
     
@@ -480,8 +543,8 @@ elif st.session_state.current_page == "homework" and st.session_state.user_id:
     
     st.divider()
     
-    # File upload
-    st.write("### Upload Data or Type Problem:")
+    # Input section
+    st.write("### Upload Data OR Type Your Question:")
     
     col1, col2 = st.columns([1, 1])
     
@@ -489,26 +552,28 @@ elif st.session_state.current_page == "homework" and st.session_state.user_id:
         uploaded_file = st.file_uploader("Upload file:", type=["csv", "xlsx", "xls", "jpg", "jpeg", "png"])
     
     with col2:
-        problem_text = st.text_area("Or type your problem:", height=100, placeholder="Type your question here...")
+        problem_text = st.text_area("Type your question:", height=100, placeholder="Type your question here...")
     
     st.divider()
     
     # Analysis section
     if "selected_category" in st.session_state:
-        st.write(f"### Analysis: {st.session_state.selected_category}")
+        st.write(f"### 🎯 {st.session_state.selected_category}")
         
         df = None
         if uploaded_file:
             if uploaded_file.name.endswith(('jpg', 'jpeg', 'png')):
                 st.image(uploaded_file, use_container_width=True)
+                st.success("Image uploaded!")
             else:
                 df = read_excel_csv(uploaded_file)
                 if df is not None:
                     st.write("**Data Preview:**")
                     st.dataframe(df.head(), use_container_width=True)
         
-        if st.button("RUN ANALYSIS 🚀", use_container_width=True):
+        if st.button("🚀 RUN ANALYSIS", use_container_width=True):
             if df is not None:
+                # Data analysis
                 try:
                     if st.session_state.selected_category == "Descriptive Statistics":
                         analyze_descriptive_stats(df)
@@ -526,10 +591,21 @@ elif st.session_state.current_page == "homework" and st.session_state.user_id:
                     st.success("✅ Analysis complete!")
                 except Exception as e:
                     st.error(f"Error: {str(e)}")
+            
             elif problem_text:
-                st.info(f"Problem: {problem_text}\n\nUpload data or image for analysis")
+                # AI problem solver for text questions
+                st.write("### 📖 Solution:")
+                current_api_key = get_api_key()
+                
+                with st.spinner("🤖 AI is thinking..."):
+                    solution = solve_with_ai(problem_text, st.session_state.selected_category, current_api_key)
+                
+                if solution:
+                    st.markdown(solution)
+                    st.success("✅ Answer provided by AI tutor!")
+            
             else:
-                st.warning("Upload file or enter problem text!")
+                st.warning("⚠️ Please upload file or type a question!")
     else:
         st.info("👆 Select analysis type above to get started!")
 
@@ -539,7 +615,7 @@ elif st.session_state.current_page == "homework" and st.session_state.user_id:
 
 elif st.session_state.current_page == "home" and st.session_state.user_id:
     st.title("📊 Data Insight Studio")
-    st.write("Welcome! Click **Homework Help** in sidebar to analyze your data.")
+    st.write("Welcome! Click **Homework Help** in sidebar to analyze your data or ask questions.")
 
 # ============================================================================
 # RESOURCES PAGE
@@ -556,10 +632,11 @@ elif st.session_state.current_page == "resources":
 if st.session_state.user_id == "admin":
     st.divider()
     st.header("⚙️ Admin Panel")
+    st.write("Configure API Key:")
     api_key = st.text_input("API Key:", type="password", value=load_api_key() or "")
     if api_key and save_api_key(api_key):
         st.session_state.api_key = api_key
-        st.success("✅ Saved!")
+        st.success("✅ API Key Saved!")
     col1, col2 = st.columns(2)
     col1.metric("API Calls", st.session_state.api_calls)
     col2.metric("Cost", "$0.00")
