@@ -8,7 +8,7 @@ from scipy.stats import ttest_ind, f_oneway, shapiro, anderson, kstest, boxcox, 
 from sklearn.linear_model import LinearRegression, LogisticRegression
 from sklearn.ensemble import RandomForestRegressor, RandomForestClassifier, GradientBoostingRegressor, GradientBoostingClassifier
 from sklearn.preprocessing import StandardScaler, LabelEncoder
-from sklearn.model_selection import train_test_split, GridSearchCV, cross_val_score
+from sklearn.model_selection import train_test_split, GridSearchCV, cross_val_score, cross_val_score
 from sklearn.metrics import mean_squared_error, r2_score, mean_absolute_error, accuracy_score, precision_score, recall_score, f1_score, confusion_matrix, classification_report
 from sklearn.cluster import KMeans
 import matplotlib.pyplot as plt
@@ -1365,7 +1365,460 @@ def ml_predictive_analysis(df):
                 mime="text/csv"
             )
     
-    st.success("✅ Hyperparameter tuning and model optimization complete!")
+    st.divider()
+    
+    st.write("#### Step 11: Advanced Improvement Strategies (Feature Engineering, Data Quality, Model Techniques)")
+    
+    st.info("""
+    **Choose improvement strategies to try:**
+    
+    **Category 1: Feature Engineering** (Often most impactful!)
+    - Add polynomial features: X², X³ for capturing non-linearity
+    - Create interaction terms: X1 * X2 to capture relationships
+    - Remove weak features: Drop low-correlation features
+    
+    **Category 2: Data Quality** (Data is crucial!)
+    - Remove outliers: Using z-score > 3 threshold
+    - Check data quality: Duplicates, missing values, anomalies
+    - Collect more data: Bootstrap augmentation (already available)
+    
+    **Category 3: Advanced Model Techniques** (Fine-tuning!)
+    - Ensemble methods: Combine multiple models
+    - Cross-validation: CV=5 for better generalization estimates
+    - Stacking: Advanced ensemble technique
+    """)
+    
+    st.divider()
+    
+    st.write("#### 🔧 FEATURE ENGINEERING OPTIONS")
+    
+    with st.expander("📊 Polynomial & Interaction Features", expanded=False):
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            add_polynomial = st.checkbox("✅ Add Polynomial Features", value=False, help="Add X², X³ features")
+        with col2:
+            add_interactions = st.checkbox("✅ Add Interaction Terms", value=False, help="Add X1*X2 features")
+        with col3:
+            remove_weak = st.checkbox("✅ Remove Weak Features", value=False, help="Remove low-correlation features")
+        
+        if add_polynomial or add_interactions or remove_weak:
+            st.write("**What will happen:**")
+            
+            if add_polynomial:
+                st.write("""
+                ✨ **Polynomial Features (X², X³)**
+                - Captures non-linear relationships
+                - Expected impact: +2-8% model improvement
+                - Trade-off: More features = slower training
+                - Best for: Curve-fitting, complex patterns
+                - Example: If X=[1,2,3] → X²=[1,4,9], X³=[1,8,27]
+                """)
+            
+            if add_interactions:
+                st.write("""
+                ✨ **Interaction Terms (X1 * X2)**
+                - Captures how features work together
+                - Expected impact: +1-5% model improvement
+                - Trade-off: Creates many new features (n² combinations)
+                - Best for: When features influence each other
+                - Example: If X1=[1,2], X2=[3,4] → X1*X2=[3,8]
+                """)
+            
+            if remove_weak:
+                st.write("""
+                ✨ **Remove Weak Features**
+                - Drops features with low correlation to target
+                - Expected impact: +0-3% (removes noise)
+                - Trade-off: Might lose useful information
+                - Best for: Reducing model complexity
+                - Method: Keep features with |correlation| > 0.1
+                """)
+            
+            if st.button("🚀 Implement Feature Engineering", use_container_width=True):
+                st.write("**Generating enhanced features...**")
+                
+                X_engineered = X.copy()
+                feature_names = list(X.columns)
+                
+                # Add polynomial features
+                if add_polynomial:
+                    for col in X.columns:
+                        X_engineered[f"{col}_squared"] = X[col] ** 2
+                        X_engineered[f"{col}_cubed"] = X[col] ** 3
+                    st.write(f"✅ Added polynomial features (X², X³) - {len(X.columns)*2} new features")
+                
+                # Add interaction terms
+                if add_interactions:
+                    interaction_count = 0
+                    for i, col1 in enumerate(X.columns):
+                        for col2 in X.columns[i+1:]:
+                            X_engineered[f"{col1}_x_{col2}"] = X[col1] * X[col2]
+                            interaction_count += 1
+                    st.write(f"✅ Added interaction terms - {interaction_count} new features")
+                
+                # Remove weak features
+                if remove_weak:
+                    correlations = X_engineered.corr()[target] if target in X_engineered.columns else X_engineered.corrwith(y).abs()
+                    weak_features = correlations[correlations.abs() < 0.1].index.tolist()
+                    if weak_features:
+                        X_engineered = X_engineered.drop(columns=weak_features, errors='ignore')
+                        st.write(f"✅ Removed {len(weak_features)} weak features: {weak_features}")
+                    else:
+                        st.write("ℹ️ No weak features found (all features have decent correlation)")
+                
+                st.success(f"✅ Feature engineering complete! New feature count: {X_engineered.shape[1]} (was {X.shape[1]})")
+                
+                st.divider()
+                
+                st.write("**🔄 Retrain Best Model with Engineered Features?**")
+                
+                if st.button("✅ Retrain with Engineered Features", use_container_width=True):
+                    st.write("**Training models on engineered features...**")
+                    
+                    X_train_eng, X_test_eng, y_train_eng, y_test_eng = train_test_split(
+                        X_engineered, y, test_size=test_size, random_state=42
+                    )
+                    
+                    st.write(f"New feature set: {X_engineered.shape[1]} features | Training: {len(X_train_eng)}")
+                    
+                    # Retrain best model
+                    if problem_type == "Regression":
+                        best_original_r2 = final_results[best_model_name]['R²']
+                        
+                        if best_model_name == "Random Forest":
+                            eng_model = RandomForestRegressor(n_estimators=100, max_depth=10, random_state=42)
+                        elif best_model_name == "Gradient Boosting":
+                            eng_model = GradientBoostingRegressor(n_estimators=100, learning_rate=0.1, max_depth=5, random_state=42)
+                        elif best_model_name == "Linear Regression":
+                            eng_model = LinearRegression()
+                        else:
+                            eng_model = RandomForestRegressor(n_estimators=100, random_state=42)
+                        
+                        eng_model.fit(X_train_eng, y_train_eng)
+                        y_pred_eng = eng_model.predict(X_test_eng)
+                        
+                        eng_r2 = r2_score(y_test_eng, y_pred_eng)
+                        eng_rmse = np.sqrt(mean_squared_error(y_test_eng, y_pred_eng))
+                        eng_mae = mean_absolute_error(y_test_eng, y_pred_eng)
+                        
+                        improvement_fe = ((eng_r2 - best_original_r2) / abs(best_original_r2)) * 100
+                        
+                        col1, col2, col3 = st.columns(3)
+                        col1.metric("R² (Original)", f"{best_original_r2:.4f}")
+                        col2.metric("R² (Engineered)", f"{eng_r2:.4f}")
+                        col3.metric("Improvement", f"{improvement_fe:+.2f}%", f"{'✅ Better' if improvement_fe > 0 else 'Slightly worse'}")
+                        
+                        if improvement_fe > 0:
+                            st.success(f"✅ FEATURE ENGINEERING IMPROVED MODEL by {improvement_fe:.2f}%!")
+                            st.write(f"""
+                            **Impact Analysis:**
+                            - Original R²: {best_original_r2:.4f}
+                            - New R²: {eng_r2:.4f}
+                            - Improvement: {improvement_fe:+.2f}%
+                            - New feature count: {X_engineered.shape[1]}
+                            
+                            **Recommendation:** Keep engineered features!
+                            """)
+                        else:
+                            st.info(f"Feature engineering showed {improvement_fe:+.2f}% change (minimal impact)")
+                    
+                    else:  # Classification
+                        best_original_acc = final_results[best_model_name]['Accuracy']
+                        
+                        if best_model_name == "Random Forest":
+                            eng_model = RandomForestClassifier(n_estimators=100, random_state=42)
+                        else:
+                            eng_model = GradientBoostingClassifier(n_estimators=100, random_state=42)
+                        
+                        eng_model.fit(X_train_eng, y_train_eng)
+                        y_pred_eng = eng_model.predict(X_test_eng)
+                        
+                        eng_acc = accuracy_score(y_test_eng, y_pred_eng)
+                        improvement_fe = ((eng_acc - best_original_acc) / abs(best_original_acc)) * 100
+                        
+                        col1, col2 = st.columns(2)
+                        col1.metric("Accuracy (Original)", f"{best_original_acc:.4f}")
+                        col2.metric("Accuracy (Engineered)", f"{eng_acc:.4f}", f"{improvement_fe:+.2f}%")
+                        
+                        if improvement_fe > 0:
+                            st.success(f"✅ FEATURE ENGINEERING IMPROVED ACCURACY by {improvement_fe:.2f}%!")
+    
+    st.divider()
+    
+    st.write("#### 🔍 DATA QUALITY & OUTLIER REMOVAL")
+    
+    with st.expander("📈 Data Quality Analysis & Outlier Detection", expanded=False):
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            remove_outliers = st.checkbox("✅ Remove Outliers (z-score > 3)", value=False)
+        with col2:
+            check_quality = st.checkbox("✅ Check Data Quality Issues", value=False)
+        
+        if remove_outliers or check_quality:
+            st.write("**What will happen:**")
+            
+            if remove_outliers:
+                st.write("""
+                🎯 **Remove Outliers (Z-Score > 3)**
+                - Removes extreme values (>3 standard deviations)
+                - Expected impact: +1-10% depending on data
+                - Trade-off: Loses some data points
+                - Best for: Removing measurement errors, anomalies
+                - Method: Keep only where |z-score| < 3
+                """)
+                
+                # Calculate outlier counts
+                outlier_counts = {}
+                for col in X.select_dtypes(include=[np.number]).columns:
+                    z_scores = np.abs(stats.zscore(X[col].fillna(X[col].mean())))
+                    outlier_count = (z_scores > 3).sum()
+                    if outlier_count > 0:
+                        outlier_counts[col] = outlier_count
+                
+                if outlier_counts:
+                    st.write("**Outliers detected:**")
+                    for col, count in outlier_counts.items():
+                        pct = (count / len(X)) * 100
+                        st.write(f"- {col}: {count} outliers ({pct:.1f}%)")
+                else:
+                    st.write("✅ No outliers detected (z-score < 3)")
+            
+            if check_quality:
+                st.write("""
+                🔎 **Data Quality Checks**
+                - Detects duplicates, missing values, anomalies
+                - Expected impact: +0-5%
+                - Identifies data issues for cleaning
+                """)
+                
+                st.write("**Quality Metrics:**")
+                col1, col2, col3, col4 = st.columns(4)
+                col1.metric("Duplicates", X.duplicated().sum())
+                col2.metric("Missing Values", X.isnull().sum().sum())
+                col3.metric("Features", X.shape[1])
+                col4.metric("Samples", X.shape[0])
+            
+            if st.button("🚀 Implement Data Quality Improvements", use_container_width=True):
+                st.write("**Cleaning dataset...**")
+                
+                X_cleaned = X.copy()
+                y_cleaned = y.copy()
+                rows_before = len(X_cleaned)
+                
+                if remove_outliers:
+                    # Remove outliers using z-score
+                    z_scores = np.abs(stats.zscore(X_cleaned.select_dtypes(include=[np.number]).fillna(X_cleaned.select_dtypes(include=[np.number]).mean())))
+                    outlier_mask = (z_scores < 3).all(axis=1)
+                    X_cleaned = X_cleaned[outlier_mask]
+                    y_cleaned = y_cleaned[outlier_mask]
+                    rows_removed = rows_before - len(X_cleaned)
+                    st.write(f"✅ Removed {rows_removed} outliers | Remaining: {len(X_cleaned)} rows")
+                
+                if check_quality:
+                    # Remove duplicates
+                    before_dup = len(X_cleaned)
+                    X_cleaned = X_cleaned.drop_duplicates()
+                    dups_removed = before_dup - len(X_cleaned)
+                    if dups_removed > 0:
+                        st.write(f"✅ Removed {dups_removed} duplicate rows")
+                
+                st.success(f"✅ Data cleaning complete! {len(X_cleaned)} clean rows (was {rows_before})")
+                
+                st.divider()
+                
+                if st.button("✅ Retrain with Cleaned Data", use_container_width=True):
+                    st.write("**Training on cleaned dataset...**")
+                    
+                    X_train_clean, X_test_clean, y_train_clean, y_test_clean = train_test_split(
+                        X_cleaned, y_cleaned, test_size=test_size, random_state=42
+                    )
+                    
+                    if problem_type == "Regression":
+                        best_original_r2 = final_results[best_model_name]['R²']
+                        
+                        if best_model_name == "Random Forest":
+                            clean_model = RandomForestRegressor(n_estimators=100, max_depth=10, random_state=42)
+                        elif best_model_name == "Gradient Boosting":
+                            clean_model = GradientBoostingRegressor(n_estimators=100, learning_rate=0.1, max_depth=5, random_state=42)
+                        else:
+                            clean_model = LinearRegression()
+                        
+                        clean_model.fit(X_train_clean, y_train_clean)
+                        y_pred_clean = clean_model.predict(X_test_clean)
+                        
+                        clean_r2 = r2_score(y_test_clean, y_pred_clean)
+                        clean_rmse = np.sqrt(mean_squared_error(y_test_clean, y_pred_clean))
+                        clean_mae = mean_absolute_error(y_test_clean, y_pred_clean)
+                        
+                        improvement_dq = ((clean_r2 - best_original_r2) / abs(best_original_r2)) * 100
+                        
+                        col1, col2 = st.columns(2)
+                        col1.metric("R² (Original)", f"{best_original_r2:.4f}")
+                        col2.metric("R² (Cleaned)", f"{clean_r2:.4f}", f"{improvement_dq:+.2f}%")
+                        
+                        if improvement_dq > 0:
+                            st.success(f"✅ DATA CLEANING IMPROVED MODEL by {improvement_dq:.2f}%!")
+                        else:
+                            st.info(f"Data quality improvements showed {improvement_dq:+.2f}% change")
+    
+    st.divider()
+    
+    st.write("#### 🤖 ADVANCED MODEL TECHNIQUES")
+    
+    with st.expander("🔬 Ensemble Methods & Cross-Validation", expanded=False):
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            use_ensemble = st.checkbox("✅ Use Ensemble Methods", value=False, help="Combine multiple models")
+        with col2:
+            use_cv = st.checkbox("✅ Use Cross-Validation (CV=5)", value=False, help="Better generalization estimates")
+        with col3:
+            use_stacking = st.checkbox("✅ Use Stacking", value=False, help="Advanced ensemble technique")
+        
+        if use_ensemble or use_cv or use_stacking:
+            st.write("**What will happen:**")
+            
+            if use_ensemble:
+                st.write("""
+                🎯 **Ensemble Methods**
+                - Combines predictions from multiple models
+                - Expected impact: +2-10% improvement
+                - Best for: Final production models
+                - Methods: Voting, Averaging (Regression), Majority (Classification)
+                """)
+            
+            if use_cv:
+                st.write("""
+                🎯 **Cross-Validation (CV=5)**
+                - Splits data into 5 folds, trains 5 models
+                - Expected impact: +0-3% (better generalization estimate)
+                - Best for: Reliable performance metrics
+                - Shows: Mean score ± std deviation
+                """)
+            
+            if use_stacking:
+                st.write("""
+                🎯 **Stacking**
+                - Uses multiple models as features for meta-model
+                - Expected impact: +3-8% improvement
+                - Best for: Complex patterns, high-stakes predictions
+                - Trade-off: Slower training, harder to interpret
+                """)
+            
+            if st.button("🚀 Implement Advanced Techniques", use_container_width=True):
+                st.write("**Training advanced models...**")
+                
+                if problem_type == "Regression":
+                    best_original_r2 = final_results[best_model_name]['R²']
+                    
+                    results_advanced = {}
+                    
+                    if use_cv:
+                        st.write("**Cross-Validation (5-Fold):**")
+                        if best_model_name == "Random Forest":
+                            cv_model = RandomForestRegressor(n_estimators=100, max_depth=10, random_state=42)
+                        elif best_model_name == "Gradient Boosting":
+                            cv_model = GradientBoostingRegressor(n_estimators=100, learning_rate=0.1, max_depth=5, random_state=42)
+                        else:
+                            cv_model = LinearRegression()
+                        
+                        cv_scores = cross_val_score(cv_model, X_train, y_train, cv=5, scoring='r2')
+                        st.write(f"- CV Scores (5-fold): {[f'{s:.4f}' for s in cv_scores]}")
+                        st.write(f"- Mean: {cv_scores.mean():.4f} ± {cv_scores.std():.4f}")
+                        st.metric("CV Mean R²", f"{cv_scores.mean():.4f}")
+                        results_advanced['CV'] = cv_scores.mean()
+                    
+                    if use_ensemble:
+                        st.write("**Ensemble (Voting):**")
+                        from sklearn.ensemble import VotingRegressor
+                        
+                        rf_model = RandomForestRegressor(n_estimators=100, max_depth=10, random_state=42)
+                        gb_model = GradientBoostingRegressor(n_estimators=100, learning_rate=0.1, max_depth=5, random_state=42)
+                        lr_model = LinearRegression()
+                        
+                        voting_reg = VotingRegressor(
+                            estimators=[('rf', rf_model), ('gb', gb_model), ('lr', lr_model)]
+                        )
+                        voting_reg.fit(X_train, y_train)
+                        y_pred_ens = voting_reg.predict(X_test)
+                        
+                        ens_r2 = r2_score(y_test, y_pred_ens)
+                        improvement_ens = ((ens_r2 - best_original_r2) / abs(best_original_r2)) * 100
+                        
+                        st.write(f"- Ensemble R²: {ens_r2:.4f}")
+                        st.write(f"- Improvement: {improvement_ens:+.2f}%")
+                        st.metric("Ensemble R²", f"{ens_r2:.4f}", f"{improvement_ens:+.2f}%")
+                        results_advanced['Ensemble'] = ens_r2
+                    
+                    if use_stacking:
+                        st.write("**Stacking (Meta-Model):**")
+                        
+                        rf_model = RandomForestRegressor(n_estimators=50, max_depth=8, random_state=42)
+                        gb_model = GradientBoostingRegressor(n_estimators=50, learning_rate=0.1, max_depth=4, random_state=42)
+                        
+                        rf_model.fit(X_train, y_train)
+                        gb_model.fit(X_train, y_train)
+                        
+                        X_train_meta = np.column_stack([rf_model.predict(X_train), gb_model.predict(X_train)])
+                        X_test_meta = np.column_stack([rf_model.predict(X_test), gb_model.predict(X_test)])
+                        
+                        meta_model = LinearRegression()
+                        meta_model.fit(X_train_meta, y_train)
+                        y_pred_stack = meta_model.predict(X_test_meta)
+                        
+                        stack_r2 = r2_score(y_test, y_pred_stack)
+                        improvement_stack = ((stack_r2 - best_original_r2) / abs(best_original_r2)) * 100
+                        
+                        st.write(f"- Stacking R²: {stack_r2:.4f}")
+                        st.write(f"- Improvement: {improvement_stack:+.2f}%")
+                        st.metric("Stacking R²", f"{stack_r2:.4f}", f"{improvement_stack:+.2f}%")
+                        results_advanced['Stacking'] = stack_r2
+                    
+                    st.divider()
+                    st.success("✅ Advanced techniques training complete!")
+                
+                else:  # Classification
+                    from sklearn.ensemble import VotingClassifier
+                    
+                    if use_cv:
+                        st.write("**Cross-Validation (5-Fold):**")
+                        if best_model_name == "Random Forest":
+                            cv_model = RandomForestClassifier(n_estimators=100, random_state=42)
+                        else:
+                            cv_model = GradientBoostingClassifier(n_estimators=100, random_state=42)
+                        
+                        cv_scores = cross_val_score(cv_model, X_train, y_train_class, cv=5, scoring='accuracy')
+                        st.write(f"- CV Scores (5-fold): {[f'{s:.4f}' for s in cv_scores]}")
+                        st.write(f"- Mean: {cv_scores.mean():.4f} ± {cv_scores.std():.4f}")
+                        st.metric("CV Mean Accuracy", f"{cv_scores.mean():.4f}")
+                    
+                    if use_ensemble:
+                        st.write("**Ensemble (Voting):**")
+                        
+                        rf_clf = RandomForestClassifier(n_estimators=100, random_state=42)
+                        gb_clf = GradientBoostingClassifier(n_estimators=100, random_state=42)
+                        lr_clf = LogisticRegression(max_iter=1000, random_state=42)
+                        
+                        voting_clf = VotingClassifier(
+                            estimators=[('rf', rf_clf), ('gb', gb_clf), ('lr', lr_clf)],
+                            voting='soft'
+                        )
+                        voting_clf.fit(X_train, y_train_class)
+                        y_pred_ens = voting_clf.predict(X_test)
+                        
+                        ens_acc = accuracy_score(y_test_class, y_pred_ens)
+                        best_original_acc = final_results[best_model_name]['Accuracy']
+                        improvement_ens = ((ens_acc - best_original_acc) / abs(best_original_acc)) * 100
+                        
+                        st.write(f"- Ensemble Accuracy: {ens_acc:.4f}")
+                        st.write(f"- Improvement: {improvement_ens:+.2f}%")
+                        st.metric("Ensemble Accuracy", f"{ens_acc:.4f}", f"{improvement_ens:+.2f}%")
+                    
+                    st.success("✅ Advanced techniques training complete!")
+    
+    st.success("✅ Improvement strategies exploration complete!")
     
     if problem_type == "Regression":
         performance = best_r2
