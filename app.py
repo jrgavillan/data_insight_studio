@@ -559,6 +559,10 @@ def ml_predictive_analysis(df):
     X = df[selected_features].fillna(df[selected_features].mean())
     y = df[target].fillna(df[target].mean())
     
+    # Store these for later use in explanations
+    n_samples = len(X)
+    n_features = X.shape[1]
+    
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=test_size, random_state=42)
     
     st.write(f"Training: {len(X_train)} samples | Testing: {len(X_test)} samples")
