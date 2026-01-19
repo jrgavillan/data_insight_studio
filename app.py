@@ -38,6 +38,8 @@ if "question_text" not in st.session_state:
     st.session_state.question_text = ""
 if "show_results" not in st.session_state:
     st.session_state.show_results = False
+if "use_cleaned_for_analysis" not in st.session_state:
+    st.session_state.use_cleaned_for_analysis = False
 
 def save_api_key(key):
     try:
@@ -162,60 +164,142 @@ def analyze_data_quality(df):
     
     return missing_data
 
+def impute_categorical_proportion(df, col):
+    """Impute categorical missing values based on proportions"""
+    missing_count = df[col].isnull().sum()
+    if missing_count == 0:
+        return df[col]
+    
+    value_counts = df[col].value_counts()
+    proportions = value_counts / value_counts.sum()
+    
+    missing_indices = df[col].isnull()
+    imputed_values = np.random.choice(
+        proportions.index, 
+        size=missing_count, 
+        p=proportions.values
+    )
+    
+    df_col = df[col].copy()
+    df_col[missing_indices] = imputed_values
+    return df_col
+
 def impute_data(df):
-    """Impute missing data with multiple options"""
+    """Impute missing data with multiple options - Numeric and Categorical"""
     st.write("### 🔧 Data Imputation")
     
     numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
     cat_cols = df.select_dtypes(include=['object']).columns.tolist()
     
-    imputation_method = st.selectbox(
-        "Select imputation strategy:",
-        ["Mean (numeric)", "Median (numeric)", "Forward Fill", "Backward Fill", "Drop Missing Rows"],
-        key="imputation_select"
-    )
+    # Show missing data by type
+    st.write("#### Missing Data by Type")
+    col1, col2 = st.columns(2)
+    
+    numeric_missing = sum([df[col].isnull().sum() for col in numeric_cols])
+    cat_missing = sum([df[col].isnull().sum() for col in cat_cols])
+    
+    with col1:
+        st.metric("Numeric Missing Values", numeric_missing)
+    with col2:
+        st.metric("Categorical Missing Values", cat_missing)
+    
+    st.divider()
+    
+    # Numeric Imputation
+    if numeric_missing > 0:
+        st.write("#### Numeric Imputation")
+        numeric_method = st.selectbox(
+            "Select numeric strategy:",
+            ["Mean", "Median", "Forward Fill", "Backward Fill"],
+            key="numeric_imputation_select"
+        )
+        
+        for col in numeric_cols:
+            if df[col].isnull().sum() > 0:
+                if numeric_method == "Mean":
+                    mean_val = df[col].mean()
+                    st.write(f"✅ **{col}**: Filling {df[col].isnull().sum()} with mean = {mean_val:.2f}")
+                    df[col].fillna(mean_val, inplace=True)
+                elif numeric_method == "Median":
+                    median_val = df[col].median()
+                    st.write(f"✅ **{col}**: Filling {df[col].isnull().sum()} with median = {median_val:.2f}")
+                    df[col].fillna(median_val, inplace=True)
+        
+        if numeric_method == "Forward Fill":
+            df = df.fillna(method='ffill')
+            st.write("✅ Applied forward fill (propagate forward)")
+        elif numeric_method == "Backward Fill":
+            df = df.fillna(method='bfill')
+            st.write("✅ Applied backward fill (propagate backward)")
+    
+    st.divider()
+    
+    # Categorical Imputation
+    if cat_missing > 0:
+        st.write("#### Categorical Imputation")
+        cat_method = st.selectbox(
+            "Select categorical strategy:",
+            ["Mode (Most Frequent)", "Proportion-Based Random"],
+            key="categorical_imputation_select"
+        )
+        
+        for col in cat_cols:
+            if df[col].isnull().sum() > 0:
+                missing_count = df[col].isnull().sum()
+                
+                if cat_method == "Mode (Most Frequent)":
+                    mode_val = df[col].mode()[0] if len(df[col].mode()) > 0 else "Unknown"
+                    st.write(f"✅ **{col}**: Filling {missing_count} with mode = '{mode_val}'")
+                    df[col].fillna(mode_val, inplace=True)
+                
+                elif cat_method == "Proportion-Based Random":
+                    value_counts = df[col].value_counts()
+                    proportions = value_counts / value_counts.sum()
+                    
+                    st.write(f"✅ **{col}**: Filling {missing_count} based on proportions:")
+                    prop_df = pd.DataFrame({
+                        'Category': proportions.index,
+                        'Proportion': [f"{p:.2%}" for p in proportions.values]
+                    })
+                    st.dataframe(prop_df, use_container_width=True)
+                    
+                    df[col] = impute_categorical_proportion(df, col)
     
     df_imputed = df.copy()
     
-    if imputation_method == "Mean (numeric)":
-        for col in numeric_cols:
-            if df_imputed[col].isnull().sum() > 0:
-                mean_val = df_imputed[col].mean()
-                st.write(f"Filling **{col}** with mean: {mean_val:.2f}")
-                df_imputed[col].fillna(mean_val, inplace=True)
+    st.divider()
     
-    elif imputation_method == "Median (numeric)":
-        for col in numeric_cols:
-            if df_imputed[col].isnull().sum() > 0:
-                median_val = df_imputed[col].median()
-                st.write(f"Filling **{col}** with median: {median_val:.2f}")
-                df_imputed[col].fillna(median_val, inplace=True)
+    st.write("#### ✅ After Imputation Summary")
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Total Rows", len(df_imputed))
+    col2.metric("Total Columns", len(df_imputed.columns))
+    col3.metric("Remaining Missing", df_imputed.isnull().sum().sum())
     
-    elif imputation_method == "Forward Fill":
-        df_imputed = df_imputed.fillna(method='ffill')
-        st.write("Applied forward fill (propagate forward)")
-    
-    elif imputation_method == "Backward Fill":
-        df_imputed = df_imputed.fillna(method='bfill')
-        st.write("Applied backward fill (propagate backward)")
-    
-    elif imputation_method == "Drop Missing Rows":
-        rows_before = len(df_imputed)
-        df_imputed = df_imputed.dropna()
-        rows_after = len(df_imputed)
-        st.write(f"Dropped {rows_before - rows_after} rows with missing values")
-    
-    st.write("#### After Imputation")
-    col1, col2 = st.columns(2)
-    col1.metric("Remaining Rows", len(df_imputed))
-    col2.metric("Remaining Missing Values", df_imputed.isnull().sum().sum())
-    
+    st.write("**Data Preview:**")
     st.dataframe(df_imputed.head(10), use_container_width=True)
     
-    csv = df_imputed.to_csv(index=False)
-    st.download_button(label="📥 Download Cleaned Data", data=csv, file_name="cleaned_data.csv", mime="text/csv")
+    st.divider()
     
+    # Store cleaned dataset
     st.session_state.cleaned_df = df_imputed
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        csv = df_imputed.to_csv(index=False)
+        st.download_button(
+            label="📥 Download Cleaned Dataset",
+            data=csv,
+            file_name="cleaned_data.csv",
+            mime="text/csv"
+        )
+    
+    with col2:
+        if st.button("🔄 Use Cleaned Data for Analysis", use_container_width=True, key="use_cleaned_btn"):
+            st.session_state.use_cleaned_for_analysis = True
+            st.success("✅ Cleaned dataset selected! Switch to another analysis type.")
+    
+    st.success("✅ Data imputation complete!")
     return df_imputed
 
 def exploratory_data_analysis(df):
@@ -765,6 +849,14 @@ if not st.session_state.user_id and st.session_state.current_page == "home":
 
 elif st.session_state.user_id and st.session_state.current_page == "homework":
     st.header("📚 Complete Data Science Workflow")
+    
+    # Show if using cleaned data
+    if st.session_state.use_cleaned_for_analysis and st.session_state.cleaned_df is not None:
+        st.info("🟢 **Using CLEANED dataset for analysis!**")
+        if st.button("Switch to Original Data", use_container_width=False):
+            st.session_state.use_cleaned_for_analysis = False
+            st.rerun()
+    
     st.write("### Step 1️⃣: Choose Analysis Type")
     st.session_state.analysis_type = st.selectbox(
         "Select:",
@@ -802,26 +894,33 @@ elif st.session_state.user_id and st.session_state.current_page == "homework":
                 st.success("✅ Done!")
         else:
             st.error("❌ Upload or type!")
+    
     if st.session_state.show_results and st.session_state.uploaded_df is not None:
         st.divider()
+        
+        # Choose which dataset to analyze
+        analysis_df = st.session_state.cleaned_df if st.session_state.use_cleaned_for_analysis else st.session_state.uploaded_df
+        
         st.write(f"### {st.session_state.analysis_type}")
+        st.write(f"*Dataset: {'CLEANED' if st.session_state.use_cleaned_for_analysis else 'ORIGINAL'} ({len(analysis_df)} rows × {len(analysis_df.columns)} cols)*")
+        
         try:
             if st.session_state.analysis_type == "Data Cleaning & EDA":
                 data_cleaning_eda_main(st.session_state.uploaded_df)
             elif st.session_state.analysis_type == "Descriptive Statistics":
-                descriptive_stats(st.session_state.uploaded_df)
+                descriptive_stats(analysis_df)
             elif st.session_state.analysis_type == "Normality Testing & Transformations":
-                normality_and_transform(st.session_state.uploaded_df)
+                normality_and_transform(analysis_df)
             elif st.session_state.analysis_type == "Regression Analysis":
-                regression_analysis(st.session_state.uploaded_df)
+                regression_analysis(analysis_df)
             elif st.session_state.analysis_type == "Correlation Analysis":
-                correlation_analysis(st.session_state.uploaded_df)
+                correlation_analysis(analysis_df)
             elif st.session_state.analysis_type == "ANOVA":
-                anova_analysis(st.session_state.uploaded_df)
+                anova_analysis(analysis_df)
             elif st.session_state.analysis_type == "Clustering Analysis":
-                clustering_analysis(st.session_state.uploaded_df)
+                clustering_analysis(analysis_df)
             elif st.session_state.analysis_type == "ML Models & Prediction":
-                ml_predictive_analysis(st.session_state.uploaded_df)
+                ml_predictive_analysis(analysis_df)
         except Exception as e:
             st.error(f"Error: {str(e)}")
 
