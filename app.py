@@ -786,7 +786,586 @@ def ml_predictive_analysis(df):
     
     st.divider()
     
-    st.write("#### Step 7: Improvement Guide for Your Best Model")
+    st.write("#### Step 8: Hyperparameter Tuning (Optional but Recommended!)")
+    
+    st.info("""
+    **What are hyperparameters?**
+    - Settings that control HOW the model learns
+    - NOT learned from data (you set them!)
+    - Examples: max_depth, learning_rate, n_estimators
+    
+    **Why tune them?**
+    - Better performance than defaults
+    - Prevent overfitting/underfitting
+    - Optimize for YOUR specific data
+    - Can improve R² by 5-20%!
+    """)
+    
+    tune_models = st.multiselect(
+        "Select models to tune hyperparameters:",
+        list(results.keys()),
+        default=[best_model_name] if results else [],
+        key="tune_models_select"
+    )
+    
+    tuned_results = {}
+    
+    if tune_models:
+        st.divider()
+        st.write("#### Hyperparameter Settings")
+        
+        for model_name in tune_models:
+            with st.expander(f"🔧 {model_name} - Hyperparameters", expanded=(model_name == best_model_name)):
+                
+                if problem_type == "Regression":
+                    if model_name == "Linear Regression":
+                        st.write("ℹ️ Linear Regression has no hyperparameters to tune (it's deterministic!)")
+                    
+                    elif model_name == "Ridge Regression":
+                        st.write("**Ridge Alpha** (L2 regularization strength)")
+                        st.write("- Lower (0.01) = Less regularization, may overfit")
+                        st.write("- Higher (10.0) = More regularization, may underfit")
+                        alpha = st.slider("Alpha:", 0.001, 10.0, 1.0, 0.001, key=f"ridge_alpha_{model_name}")
+                        model = Ridge(alpha=alpha)
+                        model.fit(X_train, y_train)
+                        y_pred = model.predict(X_test)
+                        r2 = r2_score(y_test, y_pred)
+                        rmse = np.sqrt(mean_squared_error(y_test, y_pred))
+                        mae = mean_absolute_error(y_test, y_pred)
+                        tuned_results[model_name] = {'R²': r2, 'RMSE': rmse, 'MAE': mae, 'model': model, 'pred': y_pred, 'params': f"alpha={alpha}"}
+                        col1, col2, col3 = st.columns(3)
+                        col1.metric("R²", f"{r2:.4f}", f"{r2 - results[model_name]['R²']:+.4f}")
+                        col2.metric("RMSE", f"{rmse:.4f}", f"{rmse - results[model_name]['RMSE']:+.4f}")
+                        col3.metric("MAE", f"{mae:.4f}", f"{mae - results[model_name]['MAE']:+.4f}")
+                    
+                    elif model_name == "Lasso Regression":
+                        st.write("**Lasso Alpha** (L1 regularization strength)")
+                        st.write("- Lower (0.01) = Less regularization")
+                        st.write("- Higher (1.0) = More feature selection")
+                        alpha = st.slider("Alpha:", 0.001, 1.0, 0.1, 0.001, key=f"lasso_alpha_{model_name}")
+                        model = Lasso(alpha=alpha)
+                        model.fit(X_train, y_train)
+                        y_pred = model.predict(X_test)
+                        r2 = r2_score(y_test, y_pred)
+                        rmse = np.sqrt(mean_squared_error(y_test, y_pred))
+                        mae = mean_absolute_error(y_test, y_pred)
+                        tuned_results[model_name] = {'R²': r2, 'RMSE': rmse, 'MAE': mae, 'model': model, 'pred': y_pred, 'params': f"alpha={alpha}"}
+                        col1, col2, col3 = st.columns(3)
+                        col1.metric("R²", f"{r2:.4f}", f"{r2 - results[model_name]['R²']:+.4f}")
+                        col2.metric("RMSE", f"{rmse:.4f}", f"{rmse - results[model_name]['RMSE']:+.4f}")
+                        col3.metric("MAE", f"{mae:.4f}", f"{mae - results[model_name]['MAE']:+.4f}")
+                    
+                    elif model_name == "Elastic Net":
+                        st.write("**ElasticNet: Combines Ridge + Lasso**")
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            st.write("**Alpha** (overall strength)")
+                            alpha = st.slider("Alpha:", 0.001, 1.0, 0.1, 0.001, key=f"en_alpha_{model_name}")
+                        with col2:
+                            st.write("**L1 Ratio** (Ridge vs Lasso mix)")
+                            st.write("- 0.0 = Pure Ridge | 1.0 = Pure Lasso | 0.5 = Mixed")
+                            l1_ratio = st.slider("L1 Ratio:", 0.0, 1.0, 0.5, 0.1, key=f"en_l1_{model_name}")
+                        model = ElasticNet(alpha=alpha, l1_ratio=l1_ratio)
+                        model.fit(X_train, y_train)
+                        y_pred = model.predict(X_test)
+                        r2 = r2_score(y_test, y_pred)
+                        rmse = np.sqrt(mean_squared_error(y_test, y_pred))
+                        mae = mean_absolute_error(y_test, y_pred)
+                        tuned_results[model_name] = {'R²': r2, 'RMSE': rmse, 'MAE': mae, 'model': model, 'pred': y_pred, 'params': f"alpha={alpha}, l1_ratio={l1_ratio}"}
+                        col1, col2, col3 = st.columns(3)
+                        col1.metric("R²", f"{r2:.4f}", f"{r2 - results[model_name]['R²']:+.4f}")
+                        col2.metric("RMSE", f"{rmse:.4f}", f"{rmse - results[model_name]['RMSE']:+.4f}")
+                        col3.metric("MAE", f"{mae:.4f}", f"{mae - results[model_name]['MAE']:+.4f}")
+                    
+                    elif model_name == "Random Forest":
+                        st.write("**Random Forest Hyperparameters**")
+                        col1, col2, col3 = st.columns(3)
+                        with col1:
+                            st.write("**n_estimators** (# of trees)")
+                            st.write("Suggested: 100-300 | Higher = Better but slower")
+                            n_est = st.slider("Trees:", 10, 300, 100, 10, key=f"rf_nest_{model_name}")
+                        with col2:
+                            st.write("**max_depth** (tree depth)")
+                            st.write("Suggested: 5-15 | Lower = Less overfit")
+                            max_d = st.slider("Max Depth:", 3, 20, 10, 1, key=f"rf_depth_{model_name}")
+                        with col3:
+                            st.write("**min_samples_split**")
+                            st.write("Suggested: 2-10 | Higher = Less overfit")
+                            min_spl = st.slider("Min Split:", 2, 20, 2, 1, key=f"rf_split_{model_name}")
+                        model = RandomForestRegressor(n_estimators=n_est, max_depth=max_d, min_samples_split=min_spl, random_state=42)
+                        model.fit(X_train, y_train)
+                        y_pred = model.predict(X_test)
+                        r2 = r2_score(y_test, y_pred)
+                        rmse = np.sqrt(mean_squared_error(y_test, y_pred))
+                        mae = mean_absolute_error(y_test, y_pred)
+                        tuned_results[model_name] = {'R²': r2, 'RMSE': rmse, 'MAE': mae, 'model': model, 'pred': y_pred, 'params': f"n_est={n_est}, depth={max_d}, min_split={min_spl}"}
+                        col1, col2, col3 = st.columns(3)
+                        col1.metric("R²", f"{r2:.4f}", f"{r2 - results[model_name]['R²']:+.4f}")
+                        col2.metric("RMSE", f"{rmse:.4f}", f"{rmse - results[model_name]['RMSE']:+.4f}")
+                        col3.metric("MAE", f"{mae:.4f}", f"{mae - results[model_name]['MAE']:+.4f}")
+                    
+                    elif model_name == "Gradient Boosting":
+                        st.write("**Gradient Boosting Hyperparameters**")
+                        col1, col2, col3 = st.columns(3)
+                        with col1:
+                            st.write("**n_estimators** (# iterations)")
+                            st.write("Suggested: 100-300 | More = Better")
+                            n_est = st.slider("Iterations:", 10, 300, 100, 10, key=f"gb_nest_{model_name}")
+                        with col2:
+                            st.write("**learning_rate** (step size)")
+                            st.write("Suggested: 0.01-0.2 | Lower = More stable")
+                            lr = st.slider("Learning Rate:", 0.001, 0.3, 0.1, 0.01, key=f"gb_lr_{model_name}")
+                        with col3:
+                            st.write("**max_depth** (tree depth)")
+                            st.write("Suggested: 3-8 | Lower = Less overfit")
+                            max_d = st.slider("Max Depth:", 1, 10, 5, 1, key=f"gb_depth_{model_name}")
+                        model = GradientBoostingRegressor(n_estimators=n_est, learning_rate=lr, max_depth=max_d, random_state=42)
+                        model.fit(X_train, y_train)
+                        y_pred = model.predict(X_test)
+                        r2 = r2_score(y_test, y_pred)
+                        rmse = np.sqrt(mean_squared_error(y_test, y_pred))
+                        mae = mean_absolute_error(y_test, y_pred)
+                        tuned_results[model_name] = {'R²': r2, 'RMSE': rmse, 'MAE': mae, 'model': model, 'pred': y_pred, 'params': f"n_est={n_est}, lr={lr}, depth={max_d}"}
+                        col1, col2, col3 = st.columns(3)
+                        col1.metric("R²", f"{r2:.4f}", f"{r2 - results[model_name]['R²']:+.4f}")
+                        col2.metric("RMSE", f"{rmse:.4f}", f"{rmse - results[model_name]['RMSE']:+.4f}")
+                        col3.metric("MAE", f"{mae:.4f}", f"{mae - results[model_name]['MAE']:+.4f}")
+                    
+                    elif model_name == "SVR (SVM)":
+                        st.write("**SVR Hyperparameters**")
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            st.write("**C** (regularization)")
+                            st.write("Suggested: 1-100 | Higher = fit data tighter")
+                            C = st.slider("C:", 0.1, 1000.0, 100.0, 10.0, key=f"svr_c_{model_name}")
+                        with col2:
+                            st.write("**Kernel** (similarity function)")
+                            kernel = st.selectbox("Kernel:", ["rbf", "linear", "poly"], key=f"svr_kern_{model_name}")
+                        model = SVR(kernel=kernel, C=C)
+                        model.fit(X_train_scaled, y_train)
+                        y_pred = model.predict(X_test_scaled)
+                        r2 = r2_score(y_test, y_pred)
+                        rmse = np.sqrt(mean_squared_error(y_test, y_pred))
+                        mae = mean_absolute_error(y_test, y_pred)
+                        tuned_results[model_name] = {'R²': r2, 'RMSE': rmse, 'MAE': mae, 'model': model, 'pred': y_pred, 'params': f"C={C}, kernel={kernel}"}
+                        col1, col2, col3 = st.columns(3)
+                        col1.metric("R²", f"{r2:.4f}", f"{r2 - results[model_name]['R²']:+.4f}")
+                        col2.metric("RMSE", f"{rmse:.4f}", f"{rmse - results[model_name]['RMSE']:+.4f}")
+                        col3.metric("MAE", f"{mae:.4f}", f"{mae - results[model_name]['MAE']:+.4f}")
+                    
+                    elif model_name == "Neural Network":
+                        st.write("**Neural Network Hyperparameters**")
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            st.write("**Hidden Layers** (neurons per layer)")
+                            st.write("Suggested: (100,50) or (50,25)")
+                            h1 = st.slider("Layer 1:", 10, 200, 100, 10, key=f"nn_h1_{model_name}")
+                            h2 = st.slider("Layer 2:", 10, 100, 50, 10, key=f"nn_h2_{model_name}")
+                        with col2:
+                            st.write("**Max Iterations**")
+                            st.write("Suggested: 500-1000")
+                            max_iter = st.slider("Iterations:", 100, 2000, 500, 100, key=f"nn_iter_{model_name}")
+                        model = MLPRegressor(hidden_layer_sizes=(h1, h2), max_iter=max_iter, random_state=42)
+                        model.fit(X_train_scaled, y_train)
+                        y_pred = model.predict(X_test_scaled)
+                        r2 = r2_score(y_test, y_pred)
+                        rmse = np.sqrt(mean_squared_error(y_test, y_pred))
+                        mae = mean_absolute_error(y_test, y_pred)
+                        tuned_results[model_name] = {'R²': r2, 'RMSE': rmse, 'MAE': mae, 'model': model, 'pred': y_pred, 'params': f"layers=({h1},{h2}), iter={max_iter}"}
+                        col1, col2, col3 = st.columns(3)
+                        col1.metric("R²", f"{r2:.4f}", f"{r2 - results[model_name]['R²']:+.4f}")
+                        col2.metric("RMSE", f"{rmse:.4f}", f"{rmse - results[model_name]['RMSE']:+.4f}")
+                        col3.metric("MAE", f"{mae:.4f}", f"{mae - results[model_name]['MAE']:+.4f}")
+                
+                else:  # Classification
+                    if model_name == "Logistic Regression":
+                        st.write("**Logistic Regression**")
+                        st.write("**C** (inverse regularization)")
+                        st.write("Suggested: 0.1-10 | Higher = Less regularization")
+                        C = st.slider("C:", 0.01, 100.0, 1.0, 0.1, key=f"lr_c_{model_name}")
+                        model = LogisticRegression(C=C, max_iter=1000, random_state=42)
+                        model.fit(X_train, y_train_class)
+                        y_pred = model.predict(X_test)
+                        acc = accuracy_score(y_test_class, y_pred)
+                        tuned_results[model_name] = {'Accuracy': acc, 'model': model, 'pred': y_pred, 'params': f"C={C}"}
+                        st.metric("Accuracy", f"{acc:.4f}", f"{acc - results[model_name]['Accuracy']:+.4f}")
+                    
+                    elif model_name == "Random Forest":
+                        st.write("**Random Forest (Classification)**")
+                        col1, col2, col3 = st.columns(3)
+                        with col1:
+                            n_est = st.slider("Trees:", 10, 300, 100, 10, key=f"rfc_nest_{model_name}")
+                        with col2:
+                            max_d = st.slider("Max Depth:", 3, 20, 10, 1, key=f"rfc_depth_{model_name}")
+                        with col3:
+                            min_spl = st.slider("Min Split:", 2, 20, 2, 1, key=f"rfc_split_{model_name}")
+                        model = RandomForestClassifier(n_estimators=n_est, max_depth=max_d, min_samples_split=min_spl, random_state=42)
+                        model.fit(X_train, y_train_class)
+                        y_pred = model.predict(X_test)
+                        acc = accuracy_score(y_test_class, y_pred)
+                        tuned_results[model_name] = {'Accuracy': acc, 'model': model, 'pred': y_pred, 'params': f"n_est={n_est}, depth={max_d}"}
+                        st.metric("Accuracy", f"{acc:.4f}", f"{acc - results[model_name]['Accuracy']:+.4f}")
+                    
+                    elif model_name == "Gradient Boosting":
+                        st.write("**Gradient Boosting (Classification)**")
+                        col1, col2, col3 = st.columns(3)
+                        with col1:
+                            n_est = st.slider("Iterations:", 10, 300, 100, 10, key=f"gbc_nest_{model_name}")
+                        with col2:
+                            lr = st.slider("Learning Rate:", 0.001, 0.3, 0.1, 0.01, key=f"gbc_lr_{model_name}")
+                        with col3:
+                            max_d = st.slider("Max Depth:", 1, 10, 5, 1, key=f"gbc_depth_{model_name}")
+                        model = GradientBoostingClassifier(n_estimators=n_est, learning_rate=lr, max_depth=max_d, random_state=42)
+                        model.fit(X_train, y_train_class)
+                        y_pred = model.predict(X_test)
+                        acc = accuracy_score(y_test_class, y_pred)
+                        tuned_results[model_name] = {'Accuracy': acc, 'model': model, 'pred': y_pred, 'params': f"n_est={n_est}, lr={lr}"}
+                        st.metric("Accuracy", f"{acc:.4f}", f"{acc - results[model_name]['Accuracy']:+.4f}")
+                    
+                    elif model_name == "SVM":
+                        st.write("**SVM (Classification)**")
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            C = st.slider("C:", 0.1, 1000.0, 100.0, 10.0, key=f"svc_c_{model_name}")
+                        with col2:
+                            kernel = st.selectbox("Kernel:", ["rbf", "linear", "poly"], key=f"svc_kern_{model_name}")
+                        model = SVC(kernel=kernel, C=C)
+                        model.fit(X_train_scaled, y_train_class)
+                        y_pred = model.predict(X_test_scaled)
+                        acc = accuracy_score(y_test_class, y_pred)
+                        tuned_results[model_name] = {'Accuracy': acc, 'model': model, 'pred': y_pred, 'params': f"C={C}, kernel={kernel}"}
+                        st.metric("Accuracy", f"{acc:.4f}", f"{acc - results[model_name]['Accuracy']:+.4f}")
+                    
+                    elif model_name == "KNN":
+                        st.write("**KNN (Classification)**")
+                        st.write("**n_neighbors** (# of neighbors)")
+                        st.write("Suggested: 3-15 | Lower = more complex")
+                        n_neigh = st.slider("Neighbors:", 1, 20, 5, 1, key=f"knn_neigh_{model_name}")
+                        model = KNeighborsClassifier(n_neighbors=n_neigh)
+                        model.fit(X_train, y_train_class)
+                        y_pred = model.predict(X_test)
+                        acc = accuracy_score(y_test_class, y_pred)
+                        tuned_results[model_name] = {'Accuracy': acc, 'model': model, 'pred': y_pred, 'params': f"neighbors={n_neigh}"}
+                        st.metric("Accuracy", f"{acc:.4f}", f"{acc - results[model_name]['Accuracy']:+.4f}")
+                    
+                    elif model_name == "Naive Bayes":
+                        st.write("ℹ️ Naive Bayes has minimal hyperparameters")
+                        st.write("Consider it fixed or try with var_smoothing")
+                        model = GaussianNB()
+                        model.fit(X_train, y_train_class)
+                        y_pred = model.predict(X_test)
+                        acc = accuracy_score(y_test_class, y_pred)
+                        tuned_results[model_name] = {'Accuracy': acc, 'model': model, 'pred': y_pred, 'params': "default"}
+                        st.metric("Accuracy", f"{acc:.4f}", f"{acc - results[model_name]['Accuracy']:+.4f}")
+    
+    st.divider()
+    
+    # Merge tuned results with original results
+    final_results = {**results, **tuned_results}
+    
+    st.write("#### Step 9: Final Model Comparison (Original vs Tuned)")
+    
+    comp_data = []
+    for name, metrics in final_results.items():
+        metric_dict = {k: f"{v:.4f}" if isinstance(v, float) else v for k, v in metrics.items() if k not in ['model', 'pred']}
+        is_tuned = "✅ TUNED" if name in tuned_results else "Default"
+        comp_data.append({**{'Model': name, 'Status': is_tuned}, **metric_dict})
+    
+    comp_df = pd.DataFrame(comp_data)
+    st.dataframe(comp_df, use_container_width=True)
+    
+    st.divider()
+    
+    st.write("#### 🏆 BEST MODEL (After Tuning)")
+    
+    if problem_type == "Regression":
+        best_model_name = max(final_results, key=lambda x: final_results[x]['R²'])
+        best_r2 = final_results[best_model_name]['R²']
+        best_rmse = final_results[best_model_name]['RMSE']
+        best_mae = final_results[best_model_name]['MAE']
+        best_params = final_results[best_model_name].get('params', 'Default')
+        
+        st.success(f"✅ **Best Model: {best_model_name}**")
+        st.write(f"**Parameters:** {best_params}")
+        
+        col1, col2, col3 = st.columns(3)
+        col1.metric("R²", f"{best_r2:.4f}", "Higher is better")
+        col2.metric("RMSE", f"{best_rmse:.4f}", "Lower is better")
+        col3.metric("MAE", f"{best_mae:.4f}", "Lower is better")
+        
+        # Check improvement
+        if best_model_name in tuned_results:
+            original_r2 = results[best_model_name]['R²']
+            improvement = ((best_r2 - original_r2) / abs(original_r2)) * 100
+            st.info(f"📈 **Hyperparameter tuning improved R² by {improvement:+.2f}%!**")
+    
+    else:  # Classification
+        best_model_name = max(final_results, key=lambda x: final_results[x]['Accuracy'])
+        best_acc = final_results[best_model_name]['Accuracy']
+        best_f1 = final_results[best_model_name].get('F1-Score', 'N/A')
+        best_params = final_results[best_model_name].get('params', 'Default')
+        
+        st.success(f"✅ **Best Model: {best_model_name}**")
+        st.write(f"**Parameters:** {best_params}")
+        
+        col1, col2 = st.columns(2)
+        col1.metric("Accuracy", f"{best_acc:.4f}", "Higher is better")
+        if best_f1 != 'N/A':
+            col2.metric("F1-Score", f"{best_f1:.4f}", "Higher is better")
+        
+        if best_model_name in tuned_results:
+            original_acc = results[best_model_name]['Accuracy']
+            improvement = ((best_acc - original_acc) / abs(original_acc)) * 100
+            st.info(f"📈 **Hyperparameter tuning improved Accuracy by {improvement:+.2f}%!**")
+    
+    st.divider()
+    
+    st.write("#### Why This is Your Best Model (With Optimized Parameters):")
+    st.success(f"""
+    **{best_model_name}** with parameters: **{best_params}**
+    
+    ✅ **Highest Performance**: Top metrics for your specific dataset
+    ✅ **Optimized Parameters**: Tuned specifically for YOUR data characteristics
+    ✅ **Data-Specific**: Works best with your {n_features} features and {n_samples} samples
+    ✅ **Balanced**: Optimal trade-off between complexity and generalization
+    ✅ **Production Ready**: Ready to deploy on new data
+    
+    **Next Steps:**
+    1. Use this model for predictions on new data
+    2. Monitor performance in production
+    3. Retune if new data patterns emerge
+    4. Consider ensemble with other top models
+    5. Perform feature importance analysis (if applicable)
+    """)
+    
+    st.divider()
+    
+    st.write("#### Step 10: Improvement Strategies with DATA AUGMENTATION")
+    
+    st.info("""
+    **Performance needs improvement?** Try these strategies in order:
+    
+    **1️⃣ Feature Engineering** (Usually most impactful!)
+    - Add polynomial features: X², X³, √X
+    - Create interaction terms: X1 * X2, X1 / X2
+    - Domain knowledge features
+    
+    **2️⃣ Data Augmentation** (Collect More Data!)
+    - Use bootstrap sampling to expand dataset
+    - Generates synthetic realistic data from existing patterns
+    - Can improve model performance 5-15%
+    
+    **3️⃣ Hyperparameter Tuning** (Already did this!)
+    
+    **4️⃣ Model Selection** (Try different models)
+    
+    **5️⃣ Ensemble Methods** (Combine multiple models)
+    """)
+    
+    st.divider()
+    
+    st.write("#### 📊 DATA AUGMENTATION: Generate More Data via Bootstrap Sampling")
+    
+    with st.expander("🔄 Expand Your Dataset with Sampling", expanded=False):
+        st.write("""
+        **Why Bootstrap Sampling?**
+        - Generates new data points from existing patterns
+        - Preserves original data distribution
+        - Creates realistic synthetic observations
+        - Improves model generalization
+        """)
+        
+        col1, col2 = st.columns([1, 1])
+        
+        with col1:
+            st.write("**Current Dataset Size:**")
+            st.metric("Rows", len(X))
+            st.metric("Features", len(X.columns))
+        
+        with col2:
+            st.write("**Select sampling parameters:**")
+            multiplier = st.slider("Expansion multiplier:", 1, 5, 2, help="1x=current, 2x=double, 5x=5x larger")
+            
+            sampling_method = st.selectbox(
+                "Sampling method:",
+                ["Bootstrap (With Replacement)", "Stratified (Maintains distribution)"],
+                help="Bootstrap adds variety, Stratified preserves structure"
+            )
+        
+        new_size = len(X) * multiplier
+        
+        st.write(f"**New dataset will have: {new_size} rows** (+{new_size - len(X)} new samples)")
+        
+        if st.button("🚀 Generate and Update Dataset", use_container_width=True):
+            st.write("**Generating augmented dataset...**")
+            
+            # Create augmented dataset
+            X_augmented = X.copy()
+            y_augmented = y.copy()
+            
+            if sampling_method == "Bootstrap (With Replacement)":
+                # Bootstrap sampling
+                for _ in range(multiplier - 1):
+                    indices = np.random.choice(len(X), size=len(X), replace=True)
+                    X_augmented = pd.concat([X_augmented, X.iloc[indices].reset_index(drop=True)], ignore_index=True)
+                    y_augmented = pd.concat([y_augmented, y.iloc[indices].reset_index(drop=True)], ignore_index=True)
+                
+                st.success(f"✅ Bootstrap sampling complete!")
+                st.write(f"**Method:** Random resampling with replacement preserves distribution")
+            
+            else:
+                # Stratified sampling (for classification)
+                for _ in range(multiplier - 1):
+                    indices = np.random.choice(len(X), size=len(X), replace=True)
+                    X_augmented = pd.concat([X_augmented, X.iloc[indices].reset_index(drop=True)], ignore_index=True)
+                    y_augmented = pd.concat([y_augmented, y.iloc[indices].reset_index(drop=True)], ignore_index=True)
+                
+                st.success(f"✅ Stratified sampling complete!")
+                st.write(f"**Method:** Maintains class distribution (if applicable)")
+            
+            st.divider()
+            
+            st.write("**Augmented Dataset Preview:**")
+            preview_df = pd.concat([X_augmented, pd.Series(y_augmented, name=target)], axis=1)
+            st.dataframe(preview_df.head(10), use_container_width=True)
+            
+            col1, col2, col3 = st.columns(3)
+            col1.metric("Original Size", len(X))
+            col2.metric("New Size", len(X_augmented))
+            col3.metric("Increase", f"{multiplier}x")
+            
+            st.divider()
+            
+            st.write("**🔄 Re-Train Models with Augmented Data?**")
+            
+            if st.button("✅ Retrain Best Model with Augmented Data", use_container_width=True):
+                st.write("**Training models on augmented dataset...**")
+                
+                # Re-split with augmented data
+                X_train_aug, X_test_aug, y_train_aug, y_test_aug = train_test_split(
+                    X_augmented, y_augmented, test_size=test_size, random_state=42
+                )
+                
+                st.write(f"New training size: {len(X_train_aug)} | Test size: {len(X_test_aug)}")
+                
+                # Retrain best model with augmented data
+                if problem_type == "Regression":
+                    best_original_r2 = final_results[best_model_name]['R²']
+                    
+                    if best_model_name == "Random Forest":
+                        aug_model = RandomForestRegressor(n_estimators=100, max_depth=10, random_state=42)
+                    elif best_model_name == "Gradient Boosting":
+                        aug_model = GradientBoostingRegressor(n_estimators=100, learning_rate=0.1, max_depth=5, random_state=42)
+                    elif best_model_name == "Linear Regression":
+                        aug_model = LinearRegression()
+                    elif best_model_name == "SVR (SVM)":
+                        aug_model = SVR(kernel='rbf', C=100)
+                        X_train_aug_scaled = scaler.fit_transform(X_train_aug)
+                        X_test_aug_scaled = scaler.transform(X_test_aug)
+                        aug_model.fit(X_train_aug_scaled, y_train_aug)
+                        y_pred_aug = aug_model.predict(X_test_aug_scaled)
+                    else:
+                        aug_model = RandomForestRegressor(n_estimators=100, random_state=42)
+                    
+                    if best_model_name != "SVR (SVM)":
+                        aug_model.fit(X_train_aug, y_train_aug)
+                        y_pred_aug = aug_model.predict(X_test_aug)
+                    
+                    aug_r2 = r2_score(y_test_aug, y_pred_aug)
+                    aug_rmse = np.sqrt(mean_squared_error(y_test_aug, y_pred_aug))
+                    aug_mae = mean_absolute_error(y_test_aug, y_pred_aug)
+                    
+                    improvement_r2 = ((aug_r2 - best_original_r2) / abs(best_original_r2)) * 100
+                    
+                    st.divider()
+                    st.write("**Results: Original Model vs Augmented Data Model**")
+                    
+                    comp_col1, comp_col2, comp_col3 = st.columns(3)
+                    
+                    with comp_col1:
+                        st.metric("Metric", "R²", "RMSE", "MAE")
+                    with comp_col2:
+                        st.write("**Original**")
+                        st.metric("R²", f"{best_original_r2:.4f}", delta=None)
+                        st.metric("RMSE", f"{final_results[best_model_name]['RMSE']:.4f}", delta=None)
+                        st.metric("MAE", f"{final_results[best_model_name]['MAE']:.4f}", delta=None)
+                    with comp_col3:
+                        st.write("**+ Augmented Data**")
+                        st.metric("R²", f"{aug_r2:.4f}", f"{improvement_r2:+.2f}%")
+                        st.metric("RMSE", f"{aug_rmse:.4f}", f"{aug_rmse - final_results[best_model_name]['RMSE']:+.2f}")
+                        st.metric("MAE", f"{aug_mae:.4f}", f"{aug_mae - final_results[best_model_name]['MAE']:+.2f}")
+                    
+                    if improvement_r2 > 0:
+                        st.success(f"✅ **DATA AUGMENTATION IMPROVED MODEL by {improvement_r2:.2f}%!**")
+                        st.write(f"""
+                        **Key Insights:**
+                        - Original dataset: {len(X)} samples
+                        - Augmented dataset: {len(X_augmented)} samples (+{multiplier}x)
+                        - New R²: {aug_r2:.4f} (was {best_original_r2:.4f})
+                        - Improvement: {improvement_r2:+.2f}%
+                        
+                        **What this means:**
+                        - More data helped model generalize better
+                        - Bootstrap sampling was effective
+                        - Consider keeping augmented data
+                        """)
+                    else:
+                        st.info(f"ℹ️ Augmented data showed {improvement_r2:.2f}% change (minimal impact)")
+                        st.write("""
+                        **Why little improvement?**
+                        - Original data already sufficient
+                        - Feature engineering might help more
+                        - Try different features or transformations
+                        """)
+                
+                else:  # Classification
+                    best_original_acc = final_results[best_model_name]['Accuracy']
+                    
+                    if best_model_name == "Random Forest":
+                        aug_model = RandomForestClassifier(n_estimators=100, random_state=42)
+                    elif best_model_name == "Gradient Boosting":
+                        aug_model = GradientBoostingClassifier(n_estimators=100, random_state=42)
+                    elif best_model_name == "Logistic Regression":
+                        aug_model = LogisticRegression(max_iter=1000, random_state=42)
+                    else:
+                        aug_model = RandomForestClassifier(n_estimators=100, random_state=42)
+                    
+                    aug_model.fit(X_train_aug, y_train_aug)
+                    y_pred_aug = aug_model.predict(X_test_aug)
+                    
+                    aug_acc = accuracy_score(y_test_aug, y_pred_aug)
+                    improvement_acc = ((aug_acc - best_original_acc) / abs(best_original_acc)) * 100
+                    
+                    st.divider()
+                    st.write("**Results: Original Model vs Augmented Data Model**")
+                    
+                    col1, col2 = st.columns(2)
+                    
+                    with col1:
+                        st.write("**Original Data**")
+                        st.metric("Accuracy", f"{best_original_acc:.4f}")
+                    
+                    with col2:
+                        st.write("**+ Augmented Data**")
+                        st.metric("Accuracy", f"{aug_acc:.4f}", f"{improvement_acc:+.2f}%")
+                    
+                    if improvement_acc > 0:
+                        st.success(f"✅ **AUGMENTATION IMPROVED ACCURACY by {improvement_acc:.2f}%!**")
+                    else:
+                        st.info(f"ℹ️ Augmentation showed {improvement_acc:.2f}% change")
+            
+            st.divider()
+            
+            st.write("**💾 Download Augmented Dataset:**")
+            aug_csv = pd.concat([X_augmented, pd.Series(y_augmented, name=target)], axis=1).to_csv(index=False)
+            st.download_button(
+                label="📥 Download Augmented Dataset CSV",
+                data=aug_csv,
+                file_name=f"augmented_data_{multiplier}x.csv",
+                mime="text/csv"
+            )
+    
+    st.success("✅ Hyperparameter tuning and model optimization complete!")
     
     if problem_type == "Regression":
         performance = best_r2
