@@ -2056,7 +2056,10 @@ def clustering_analysis(df):
 # ============================================================================
 
 with st.sidebar:
-    st.image("logo_2.png", width=250)
+    try:
+        st.image("logo_1.png", width=250)
+    except:
+        st.title("📊 Data Insight")
     st.divider()
     if not st.session_state.user_id:
         login_type = st.radio("Login:", ["Student", "Admin"], key="login_radio")
