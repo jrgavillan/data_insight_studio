@@ -115,14 +115,14 @@ def apply_transformation(data, method):
     data_clean = data.dropna()
     if method == "Log":
         if (data_clean > 0).all():
-            transformed = np.log(data_clean)
+            transformed = pd.Series(np.log(data_clean.values), index=data_clean.index)
             explanation = "**Log Transformation**: Compresses right-skewed data."
             return transformed, explanation, True
         else:
             return None, "❌ Log requires positive values!", False
     elif method == "Square Root":
         if (data_clean >= 0).all():
-            transformed = np.sqrt(data_clean)
+            transformed = pd.Series(np.sqrt(data_clean.values), index=data_clean.index)
             explanation = "**Square Root**: Less aggressive than log."
             return transformed, explanation, True
         else:
@@ -130,7 +130,8 @@ def apply_transformation(data, method):
     elif method == "Box-Cox":
         if (data_clean > 0).all():
             try:
-                transformed, lambda_param = boxcox(data_clean)
+                trans_array, lambda_param = boxcox(data_clean)
+                transformed = pd.Series(trans_array, index=data_clean.index)
                 explanation = f"**Box-Cox (λ={lambda_param:.4f})**: Auto-optimal transformation."
                 return transformed, explanation, True
             except:
@@ -139,7 +140,8 @@ def apply_transformation(data, method):
             return None, "❌ Box-Cox needs positive!", False
     elif method == "Yeo-Johnson":
         try:
-            transformed, lambda_param = yeojohnson(data_clean)
+            trans_array, lambda_param = yeojohnson(data_clean)
+            transformed = pd.Series(trans_array, index=data_clean.index)
             explanation = f"**Yeo-Johnson (λ={lambda_param:.4f})**: Works with ANY values."
             return transformed, explanation, True
         except:
@@ -147,18 +149,20 @@ def apply_transformation(data, method):
     elif method == "Z-Score":
         mean = data_clean.mean()
         std = data_clean.std()
-        transformed = (data_clean - mean) / std
+        transformed = pd.Series((data_clean - mean) / std, index=data_clean.index)
         explanation = "**Z-Score**: Centers (mean=0) and scales (std=1)."
         return transformed, explanation, True
     elif method == "Min-Max":
         min_val = data_clean.min()
         max_val = data_clean.max()
-        transformed = (data_clean - min_val) / (max_val - min_val)
+        transformed = pd.Series((data_clean - min_val) / (max_val - min_val), index=data_clean.index)
         explanation = "**Min-Max**: Scales to [0,1] range."
         return transformed, explanation, True
     return None, "", False
 
 def test_normality(data):
+    if isinstance(data, np.ndarray):
+        data = pd.Series(data)
     data_clean = data.dropna()
     shapiro_stat, shapiro_p = shapiro(data_clean)
     anderson_result = anderson(data_clean)
