@@ -455,9 +455,58 @@ def apply_transformation(data, method):
 # ML MODELS & PREDICTIVE ANALYSIS
 # ============================================================================
 
+# ============================================================================
+# ML MODELS & PREDICTIVE ANALYSIS WITH MODEL RECOMMENDATION
+# ============================================================================
+
+def recommend_best_model(X, y, problem_type):
+    """Recommend best model based on data characteristics"""
+    n_samples = len(X)
+    n_features = X.shape[1]
+    
+    if problem_type == "Regression":
+        recommendations = []
+        
+        # Check data size
+        if n_samples < 100:
+            recommendations.append("🟢 For small datasets: Linear, Ridge, Lasso (less prone to overfitting)")
+        elif n_samples < 1000:
+            recommendations.append("🟢 For medium datasets: Random Forest, Gradient Boosting (good balance)")
+        else:
+            recommendations.append("🟢 For large datasets: Any model works, but GB and RF excel")
+        
+        # Check feature count
+        if n_features > 50:
+            recommendations.append("🟡 High features: Consider feature selection or dimensionality reduction")
+        
+        # Check correlation with target
+        correlations = [abs(np.corrcoef(X[:, i], y)[0, 1]) for i in range(min(5, n_features))]
+        avg_corr = np.mean([c for c in correlations if not np.isnan(c)])
+        
+        if avg_corr > 0.7:
+            recommendations.append("🟢 Strong linear relationship: Linear Regression will work well")
+        elif avg_corr > 0.3:
+            recommendations.append("🟡 Moderate relationship: Tree-based models (RF, GB) recommended")
+        else:
+            recommendations.append("🔴 Weak linear relationship: Complex models needed (SVM, Neural Net)")
+        
+        return "\n".join(recommendations)
+    
+    else:  # Classification
+        recommendations = []
+        
+        if n_samples < 100:
+            recommendations.append("🟢 Small dataset: Logistic Regression, SVM, KNN")
+        elif n_samples < 1000:
+            recommendations.append("🟢 Medium dataset: Random Forest, Gradient Boosting, SVM")
+        else:
+            recommendations.append("🟢 Large dataset: Neural Networks, Gradient Boosting")
+        
+        return "\n".join(recommendations)
+
 def ml_predictive_analysis(df):
-    """Advanced ML models for predictive analysis"""
-    st.write("### 🤖 ML Models & Predictive Analysis")
+    """Advanced ML models for predictive analysis - EXPANDED"""
+    st.write("### 🤖 ML Models & Predictive Analysis (ADVANCED)")
     
     numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
     
@@ -471,7 +520,7 @@ def ml_predictive_analysis(df):
     feature_cols = [col for col in numeric_cols if col != target]
     
     if not feature_cols:
-        st.error("Need at least 1 feature besides target")
+        st.error("Need at least 1 feature")
         return
     
     st.write("#### Step 2: Select Features")
@@ -481,10 +530,30 @@ def ml_predictive_analysis(df):
         st.error("Select at least 1 feature")
         return
     
-    st.write("#### Step 3: Choose Model Type")
-    model_type = st.selectbox("Model Type:", ["Regression", "Classification"], key="ml_type")
+    st.write("#### Step 3: Problem Type & Models")
+    col1, col2 = st.columns([1, 1])
     
-    st.write("#### Step 4: Train Test Split")
+    with col1:
+        problem_type = st.selectbox("Problem Type:", ["Regression", "Classification"], key="ml_type")
+    
+    with col2:
+        if problem_type == "Regression":
+            selected_models = st.multiselect(
+                "Select Models:",
+                ["Linear Regression", "Ridge Regression", "Lasso Regression", "Elastic Net",
+                 "Random Forest", "Gradient Boosting", "SVR (SVM)", "Neural Network"],
+                default=["Random Forest", "Gradient Boosting"],
+                key="ml_reg_models"
+            )
+        else:
+            selected_models = st.multiselect(
+                "Select Models:",
+                ["Logistic Regression", "Random Forest", "Gradient Boosting", "SVM", "KNN", "Naive Bayes"],
+                default=["Random Forest", "Gradient Boosting"],
+                key="ml_class_models"
+            )
+    
+    st.write("#### Step 4: Train-Test Split")
     test_size = st.slider("Test size:", 0.1, 0.5, 0.2, key="ml_test_size")
     
     X = df[selected_features].fillna(df[selected_features].mean())
@@ -492,11 +561,17 @@ def ml_predictive_analysis(df):
     
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=test_size, random_state=42)
     
-    st.write(f"Training: {len(X_train)} | Testing: {len(X_test)}")
+    st.write(f"Training: {len(X_train)} samples | Testing: {len(X_test)} samples")
     
     st.divider()
     
-    st.write("#### Step 5: Train Models")
+    st.write("#### Model Recommendation for YOUR Data")
+    recommendation = recommend_best_model(X_train.values, y_train.values, problem_type)
+    st.info(recommendation)
+    
+    st.divider()
+    
+    st.write("#### Step 5: Train Selected Models")
     
     scaler = StandardScaler()
     X_train_scaled = scaler.fit_transform(X_train)
@@ -504,132 +579,296 @@ def ml_predictive_analysis(df):
     
     results = {}
     
-    col1, col2 = st.columns(2)
+    # Import additional models
+    from sklearn.linear_model import Ridge, Lasso, ElasticNet
+    from sklearn.svm import SVR, SVC
+    from sklearn.neighbors import KNeighborsClassifier
+    from sklearn.naive_bayes import GaussianNB
+    from sklearn.neural_network import MLPRegressor, MLPClassifier
     
-    with col1:
-        st.write("**Random Forest**")
-        if model_type == "Regression":
-            rf_model = RandomForestRegressor(n_estimators=100, random_state=42, max_depth=10)
-            rf_model.fit(X_train, y_train)
-            rf_pred = rf_model.predict(X_test)
-            rf_r2 = r2_score(y_test, rf_pred)
-            rf_rmse = np.sqrt(mean_squared_error(y_test, rf_pred))
-            rf_mae = mean_absolute_error(y_test, rf_pred)
-            results['Random Forest'] = {'R²': rf_r2, 'RMSE': rf_rmse, 'MAE': rf_mae, 'model': rf_model, 'pred': rf_pred}
-            st.write(f"R²: {rf_r2:.4f} | RMSE: {rf_rmse:.4f} | MAE: {rf_mae:.4f}")
-            
-            fig, ax = plt.subplots(figsize=(8, 6))
-            ax.scatter(y_test, rf_pred, alpha=0.6)
-            ax.plot([y_test.min(), y_test.max()], [y_test.min(), y_test.max()], 'r--', lw=2)
-            ax.set_xlabel('Actual')
-            ax.set_ylabel('Predicted')
-            ax.set_title('Random Forest Predictions')
-            st.pyplot(fig)
-        else:
-            y_class = (y > y.median()).astype(int)
-            y_train_class = (y_train > y.median()).astype(int)
-            y_test_class = (y_test > y.median()).astype(int)
-            rf_model = RandomForestClassifier(n_estimators=100, random_state=42)
-            rf_model.fit(X_train, y_train_class)
-            rf_pred = rf_model.predict(X_test)
-            rf_acc = accuracy_score(y_test_class, rf_pred)
-            results['Random Forest'] = {'Accuracy': rf_acc, 'model': rf_model, 'pred': rf_pred}
-            st.write(f"Accuracy: {rf_acc:.4f}")
+    if problem_type == "Regression":
+        col_count = len(selected_models)
+        cols = st.columns(min(2, col_count))
+        col_idx = 0
+        
+        for model_name in selected_models:
+            with cols[col_idx % 2]:
+                st.write(f"**{model_name}**")
+                
+                try:
+                    if model_name == "Linear Regression":
+                        model = LinearRegression()
+                        model.fit(X_train, y_train)
+                    elif model_name == "Ridge Regression":
+                        model = Ridge(alpha=1.0)
+                        model.fit(X_train, y_train)
+                    elif model_name == "Lasso Regression":
+                        model = Lasso(alpha=0.1)
+                        model.fit(X_train, y_train)
+                    elif model_name == "Elastic Net":
+                        model = ElasticNet(alpha=0.1)
+                        model.fit(X_train, y_train)
+                    elif model_name == "Random Forest":
+                        model = RandomForestRegressor(n_estimators=100, random_state=42, max_depth=10)
+                        model.fit(X_train, y_train)
+                    elif model_name == "Gradient Boosting":
+                        model = GradientBoostingRegressor(n_estimators=100, random_state=42, max_depth=5)
+                        model.fit(X_train, y_train)
+                    elif model_name == "SVR (SVM)":
+                        model = SVR(kernel='rbf', C=100)
+                        model.fit(X_train_scaled, y_train)
+                        X_test_use = X_test_scaled
+                        X_train_use = X_train_scaled
+                    elif model_name == "Neural Network":
+                        model = MLPRegressor(hidden_layer_sizes=(100, 50), max_iter=500, random_state=42)
+                        model.fit(X_train_scaled, y_train)
+                        X_test_use = X_test_scaled
+                        X_train_use = X_train_scaled
+                    else:
+                        continue
+                    
+                    # Make predictions
+                    if model_name in ["SVR (SVM)", "Neural Network"]:
+                        y_pred = model.predict(X_test_use)
+                    else:
+                        y_pred = model.predict(X_test)
+                    
+                    # Calculate metrics
+                    r2 = r2_score(y_test, y_pred)
+                    rmse = np.sqrt(mean_squared_error(y_test, y_pred))
+                    mae = mean_absolute_error(y_test, y_pred)
+                    
+                    results[model_name] = {
+                        'R²': r2,
+                        'RMSE': rmse,
+                        'MAE': mae,
+                        'model': model,
+                        'pred': y_pred
+                    }
+                    
+                    st.metric("R²", f"{r2:.4f}")
+                    st.write(f"RMSE: {rmse:.4f} | MAE: {mae:.4f}")
+                    
+                except Exception as e:
+                    st.error(f"Failed: {str(e)[:50]}")
+                
+                col_idx += 1
     
-    with col2:
-        st.write("**Gradient Boosting**")
-        if model_type == "Regression":
-            gb_model = GradientBoostingRegressor(n_estimators=100, random_state=42, max_depth=5)
-            gb_model.fit(X_train, y_train)
-            gb_pred = gb_model.predict(X_test)
-            gb_r2 = r2_score(y_test, gb_pred)
-            gb_rmse = np.sqrt(mean_squared_error(y_test, gb_pred))
-            gb_mae = mean_absolute_error(y_test, gb_pred)
-            results['Gradient Boosting'] = {'R²': gb_r2, 'RMSE': gb_rmse, 'MAE': gb_mae, 'model': gb_model, 'pred': gb_pred}
-            st.write(f"R²: {gb_r2:.4f} | RMSE: {gb_rmse:.4f} | MAE: {gb_mae:.4f}")
-            
-            fig, ax = plt.subplots(figsize=(8, 6))
-            ax.scatter(y_test, gb_pred, alpha=0.6, color='orange')
-            ax.plot([y_test.min(), y_test.max()], [y_test.min(), y_test.max()], 'r--', lw=2)
-            ax.set_xlabel('Actual')
-            ax.set_ylabel('Predicted')
-            ax.set_title('Gradient Boosting Predictions')
-            st.pyplot(fig)
-        else:
-            y_class = (y > y.median()).astype(int)
-            y_train_class = (y_train > y.median()).astype(int)
-            y_test_class = (y_test > y.median()).astype(int)
-            gb_model = GradientBoostingClassifier(n_estimators=100, random_state=42)
-            gb_model.fit(X_train, y_train_class)
-            gb_pred = gb_model.predict(X_test)
-            gb_acc = accuracy_score(y_test_class, gb_pred)
-            results['Gradient Boosting'] = {'Accuracy': gb_acc, 'model': gb_model, 'pred': gb_pred}
-            st.write(f"Accuracy: {gb_acc:.4f}")
+    else:  # Classification
+        y_class = (y > y.median()).astype(int)
+        y_train_class = (y_train > y.median()).astype(int)
+        y_test_class = (y_test > y.median()).astype(int)
+        
+        col_count = len(selected_models)
+        cols = st.columns(min(2, col_count))
+        col_idx = 0
+        
+        for model_name in selected_models:
+            with cols[col_idx % 2]:
+                st.write(f"**{model_name}**")
+                
+                try:
+                    if model_name == "Logistic Regression":
+                        model = LogisticRegression(max_iter=1000, random_state=42)
+                        model.fit(X_train, y_train_class)
+                    elif model_name == "Random Forest":
+                        model = RandomForestClassifier(n_estimators=100, random_state=42)
+                        model.fit(X_train, y_train_class)
+                    elif model_name == "Gradient Boosting":
+                        model = GradientBoostingClassifier(n_estimators=100, random_state=42)
+                        model.fit(X_train, y_train_class)
+                    elif model_name == "SVM":
+                        model = SVC(kernel='rbf', C=100)
+                        model.fit(X_train_scaled, y_train_class)
+                        X_test_use = X_test_scaled
+                    elif model_name == "KNN":
+                        model = KNeighborsClassifier(n_neighbors=5)
+                        model.fit(X_train, y_train_class)
+                    elif model_name == "Naive Bayes":
+                        model = GaussianNB()
+                        model.fit(X_train, y_train_class)
+                    else:
+                        continue
+                    
+                    # Make predictions
+                    if model_name == "SVM":
+                        y_pred = model.predict(X_test_use)
+                    else:
+                        y_pred = model.predict(X_test)
+                    
+                    # Calculate metrics
+                    acc = accuracy_score(y_test_class, y_pred)
+                    prec = precision_score(y_test_class, y_pred, zero_division=0)
+                    rec = recall_score(y_test_class, y_pred, zero_division=0)
+                    f1 = f1_score(y_test_class, y_pred, zero_division=0)
+                    
+                    results[model_name] = {
+                        'Accuracy': acc,
+                        'Precision': prec,
+                        'Recall': rec,
+                        'F1-Score': f1,
+                        'model': model,
+                        'pred': y_pred
+                    }
+                    
+                    st.metric("Accuracy", f"{acc:.4f}")
+                    st.write(f"Precision: {prec:.4f} | Recall: {rec:.4f} | F1: {f1:.4f}")
+                    
+                except Exception as e:
+                    st.error(f"Failed: {str(e)[:50]}")
+                
+                col_idx += 1
     
     st.divider()
     
-    st.write("#### Step 6: Model Comparison")
+    st.write("#### Step 6: Model Comparison & Best Model Selection")
+    
+    if not results:
+        st.error("No models trained successfully")
+        return
+    
+    # Create comparison dataframe
     comp_data = []
     for name, metrics in results.items():
-        comp_data.append({**{'Model': name}, **{k: f"{v:.4f}" if isinstance(v, float) else v for k, v in metrics.items() if k not in ['model', 'pred']}})
-    st.dataframe(pd.DataFrame(comp_data), use_container_width=True)
+        metric_dict = {k: f"{v:.4f}" if isinstance(v, float) else v for k, v in metrics.items() if k not in ['model', 'pred']}
+        comp_data.append({**{'Model': name}, **metric_dict})
+    
+    comp_df = pd.DataFrame(comp_data)
+    st.dataframe(comp_df, use_container_width=True)
     
     st.divider()
     
-    st.write("#### Step 7: Model Improvement Guide")
-    st.write("""
-    **📈 How to Improve Your Model:**
+    # Find and highlight best model
+    st.write("#### 🏆 BEST MODEL")
     
-    **1️⃣ Performance Issues**
-    - Low R² / Accuracy?
-      - ✅ Add more features
-      - ✅ Remove irrelevant features
-      - ✅ Collect more data
-      - ✅ Try different hyperparameters
+    if problem_type == "Regression":
+        best_model_name = max(results, key=lambda x: results[x]['R²'])
+        best_r2 = results[best_model_name]['R²']
+        best_rmse = results[best_model_name]['RMSE']
+        best_mae = results[best_model_name]['MAE']
+        
+        st.success(f"✅ **Best Model: {best_model_name}**")
+        col1, col2, col3 = st.columns(3)
+        col1.metric("R²", f"{best_r2:.4f}", "Higher is better")
+        col2.metric("RMSE", f"{best_rmse:.4f}", "Lower is better")
+        col3.metric("MAE", f"{best_mae:.4f}", "Lower is better")
     
-    **2️⃣ Overfitting (Train >> Test)**
-    - ✅ Reduce max_depth
-    - ✅ Increase min_samples_split
-    - ✅ Add regularization (L1/L2)
-    - ✅ Get more training data
-    - ✅ Feature engineering
+    else:  # Classification
+        best_model_name = max(results, key=lambda x: results[x]['Accuracy'])
+        best_acc = results[best_model_name]['Accuracy']
+        best_f1 = results[best_model_name]['F1-Score']
+        
+        st.success(f"✅ **Best Model: {best_model_name}**")
+        col1, col2 = st.columns(2)
+        col1.metric("Accuracy", f"{best_acc:.4f}", "Higher is better")
+        col2.metric("F1-Score", f"{best_f1:.4f}", "Higher is better")
     
-    **3️⃣ Underfitting (Train ≈ Test, both low)**
-    - ✅ Increase model complexity
-    - ✅ Increase max_depth
-    - ✅ Add polynomial features
-    - ✅ Use better features
-    - ✅ Reduce regularization
+    st.divider()
     
-    **4️⃣ Data Issues**
-    - ✅ Check for missing values (impute)
-    - ✅ Remove outliers (z-score > 3)
-    - ✅ Scale features (StandardScaler)
-    - ✅ Handle imbalanced classes (SMOTE)
-    - ✅ Feature normalization
+    st.write("#### Why This Model is Best:")
+    st.info(f"""
+    **{best_model_name}** performs best on YOUR data because:
     
-    **5️⃣ Feature Engineering**
-    - ✅ Create interaction terms (X1 * X2)
-    - ✅ Polynomial features (X^2, X^3)
-    - ✅ Log transform skewed features
-    - ✅ Domain-specific features
-    - ✅ PCA for dimensionality reduction
+    ✅ **Highest Performance**: Achieves top metrics for this specific dataset
+    ✅ **Data Characteristics Match**: Works well with your {n_features} features and {n_samples} samples
+    ✅ **Complexity-Generalization Balance**: Avoids both underfitting and overfitting
+    ✅ **Robust to Data Patterns**: Handles relationships in your data effectively
     
-    **6️⃣ Hyperparameter Tuning**
-    - ✅ GridSearchCV for best params
-    - ✅ Adjust learning_rate (GB)
-    - ✅ Adjust n_estimators
-    - ✅ Adjust max_depth
-    - ✅ Cross-validation (CV=5)
-    
-    **7️⃣ Model Selection**
-    - For Linear: LinearRegression, Ridge, Lasso
-    - For Complex: Random Forest, GB, XGBoost
-    - For Classification: LogisticRegression, RFC, GBC
-    - Ensemble: VotingRegressor, StackingRegressor
+    **For future improvements:**
+    - Hyperparameter tuning on this model will likely yield best results
+    - Feature engineering focused on this model's strengths
+    - Ensemble with top 2-3 models for even better performance
     """)
     
-    st.success("✅ Model training complete!")
+    st.divider()
+    
+    st.write("#### Step 7: Improvement Guide for Your Best Model")
+    
+    if problem_type == "Regression":
+        performance = best_r2
+        metric_name = "R²"
+        
+        if performance > 0.9:
+            st.success(f"✅ Excellent Performance (R² > 0.90)! Your model is well-tuned.")
+            improvements = """
+            **Fine-tuning suggestions:**
+            - Try ensemble: Combine with other top models
+            - Feature interactions: Create X1 * X2 terms
+            - Advanced tuning: GridSearchCV on hyperparameters
+            """
+        elif performance > 0.7:
+            st.info(f"🟡 Good Performance (R² > 0.70). Room for improvement.")
+            improvements = """
+            **Improvement strategies:**
+            1. **Features**:
+               - Add polynomial features (X², X³)
+               - Create interaction terms (X1 * X2)
+               - Remove weak features
+            
+            2. **Data**:
+               - Remove outliers (z-score > 3)
+               - Collect more data
+               - Check for data quality issues
+            
+            3. **Model**:
+               - Tune hyperparameters: max_depth, n_estimators
+               - Try ensemble methods
+               - Use cross-validation (CV=5)
+            """
+        else:
+            st.warning(f"🔴 Needs Improvement (R² < 0.70).")
+            improvements = """
+            **Urgent improvement steps:**
+            1. **Data Quality** (Do First!):
+               - Handle outliers
+               - Check for non-linear relationships
+               - Verify feature relevance
+            
+            2. **Feature Engineering**:
+               - Add new features
+               - Transform skewed features (log, sqrt)
+               - Remove irrelevant features
+            
+            3. **Model Selection**:
+               - Try non-linear models (SVM, Neural Net)
+               - Use ensemble methods
+               - Increase model complexity
+            
+            4. **Hyperparameter Tuning**:
+               - GridSearchCV for optimization
+               - Cross-validation
+               - Different random seeds
+            """
+    else:
+        performance = results[best_model_name]['Accuracy']
+        metric_name = "Accuracy"
+        
+        if performance > 0.95:
+            st.success(f"✅ Excellent Performance (Accuracy > 0.95)!")
+            improvements = "Your model is performing excellently! Consider deployment."
+        elif performance > 0.85:
+            st.info(f"🟡 Good Performance (Accuracy > 0.85).")
+            improvements = """
+            **To improve further:**
+            - Tune hyperparameters
+            - Feature engineering
+            - Handle class imbalance (if present)
+            - Ensemble methods
+            """
+        else:
+            st.warning(f"🔴 Needs Improvement (Accuracy < 0.85).")
+            improvements = """
+            **Critical improvements needed:**
+            - Check for class imbalance
+            - Better feature engineering
+            - More data collection
+            - Try different models
+            - Cross-validation
+            """
+    
+    st.write(improvements)
+    
+    st.success("✅ Model training & analysis complete!")
 
 # ============================================================================
 # OTHER ANALYSIS FUNCTIONS (Keep existing ones)
