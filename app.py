@@ -2056,10 +2056,7 @@ def clustering_analysis(df):
 # ============================================================================
 
 with st.sidebar:
-    try:
-        st.image("logo_1.png", width=250)
-    except:
-        st.title("📊 Data Insight")
+    st.image("logo_2.png", width=250)
     st.divider()
     if not st.session_state.user_id:
         login_type = st.radio("Login:", ["Student", "Admin"], key="login_radio")
@@ -2106,7 +2103,7 @@ with st.sidebar:
 # ============================================================================
 
 if not st.session_state.user_id and st.session_state.current_page == "home":
-    st.title("📊 Data Insight Studio")
+    st.image("logo_2.png", width=600)
     st.subheader("Professional Data Science & ML Platform")
     col1, col2 = st.columns([2, 1])
     with col1:
@@ -2200,8 +2197,8 @@ elif st.session_state.user_id and st.session_state.current_page == "homework":
             st.error(f"Error: {str(e)}")
 
 elif st.session_state.user_id and st.session_state.current_page == "home":
-    st.title("📊 Data Insight Studio")
-    st.write("Click Homework!")
+    st.image("logo_2.png", width=400)
+    st.write("Click **Homework** to get started!")
 
 elif st.session_state.user_id == "admin" and st.session_state.current_page == "admin":
     st.title("⚙️ Admin Panel")
