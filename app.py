@@ -29,25 +29,47 @@ def detect_feature_type(series):
     if len(series_clean) == 0:
         return 'unknown'
     
-    # Try numeric
+    # Check unique values FIRST
+    unique_count = series_clean.nunique()
+    unique_ratio = unique_count / len(series_clean)
+    
+    # If very few unique values, it's likely categorical (even if numeric)
+    # Rule: If ≤ 20 unique values OR unique ratio < 5%, treat as categorical
+    if unique_count <= 20 or unique_ratio < 0.05:
+        # But exclude clear numeric ranges (continuous variables)
+        numeric_attempt = pd.to_numeric(series_clean, errors='coerce')
+        numeric_success_rate = numeric_attempt.notna().sum() / len(series_clean)
+        
+        if numeric_success_rate > 0.95:  # Is numeric
+            # Check if it's actually encoded categorical
+            # Encoded categoricals typically have integer values 1-N or 0-(N-1)
+            unique_vals = sorted(numeric_attempt.dropna().unique())
+            is_small_integers = len(unique_vals) <= 20 and all(v == int(v) for v in unique_vals)
+            
+            if is_small_integers and (unique_vals == list(range(len(unique_vals))) or 
+                                     unique_vals == list(range(1, len(unique_vals) + 1))):
+                return 'categorical'  # Encoded categorical
+    
+    # Try numeric (continuous)
     numeric_attempt = pd.to_numeric(series_clean, errors='coerce')
     numeric_success_rate = numeric_attempt.notna().sum() / len(series_clean)
     
-    if numeric_success_rate > 0.8:
+    if numeric_success_rate > 0.9:  # Mostly numeric
+        # Check if it's actually categorical (few unique values)
+        if unique_count <= 10 or unique_ratio < 0.1:
+            return 'categorical'
         return 'numeric'
     
     # Check for dates
     try:
-        pd.to_datetime(series_clean, errors='coerce')
-        date_success = pd.to_datetime(series_clean, errors='coerce').notna().sum() / len(series_clean)
+        date_attempt = pd.to_datetime(series_clean, errors='coerce')
+        date_success = date_attempt.notna().sum() / len(series_clean)
         if date_success > 0.8:
             return 'date'
     except:
         pass
     
-    # Check unique values
-    unique_ratio = series_clean.nunique() / len(series_clean)
-    
+    # Check unique values again for text
     if unique_ratio < 0.1:  # Few unique values
         return 'categorical'
     elif unique_ratio < 0.5:
@@ -573,32 +595,40 @@ def impute_data(df):
     return df_imputed
 
 def exploratory_data_analysis(df):
-    """Comprehensive EDA"""
+    """Comprehensive EDA - handles both numeric and categorical"""
     st.write("### 📈 Exploratory Data Analysis (EDA)")
     
-    numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+    all_cols = df.columns.tolist()
     
     st.write("#### Summary Statistics")
     st.dataframe(df.describe(), use_container_width=True)
     
     st.write("#### Distribution Analysis")
-    if numeric_cols:
-        col_select = st.selectbox("Select column for distribution:", numeric_cols, key="eda_dist_col")
-        col_data = df[col_select].dropna()
+    col_select = st.selectbox("Select column for distribution:", all_cols, key="eda_dist_col")
+    
+    # Detect feature type
+    feature_type = detect_feature_type(df[col_select])
+    col_data = df[col_select].dropna()
+    
+    if feature_type == 'numeric':
+        st.write(f"**🔢 NUMERIC: {col_select}**")
         
         fig, axes = plt.subplots(2, 2, figsize=(12, 10))
         
-        axes[0, 0].hist(col_data, bins=30, edgecolor='black', alpha=0.7)
+        axes[0, 0].hist(col_data, bins=30, edgecolor='black', alpha=0.7, color='steelblue')
         axes[0, 0].set_title(f'Histogram of {col_select}')
+        axes[0, 0].set_ylabel('Frequency')
         
         axes[0, 1].boxplot(col_data)
         axes[0, 1].set_title('Box Plot')
+        axes[0, 1].set_ylabel(col_select)
         
         stats.probplot(col_data, dist="norm", plot=axes[1, 0])
         axes[1, 0].set_title('Q-Q Plot')
         
-        col_data.plot(kind='density', ax=axes[1, 1])
+        col_data.plot(kind='density', ax=axes[1, 1], color='steelblue')
         axes[1, 1].set_title('Density Plot')
+        axes[1, 1].set_xlabel(col_select)
         
         plt.tight_layout()
         st.pyplot(fig)
@@ -609,11 +639,69 @@ def exploratory_data_analysis(df):
             'Median': col_data.median(),
             'Std Dev': col_data.std(),
             'Min': col_data.min(),
+            'Q1 (25%)': col_data.quantile(0.25),
+            'Q3 (75%)': col_data.quantile(0.75),
             'Max': col_data.max(),
             'Skewness': stats.skew(col_data),
             'Kurtosis': stats.kurtosis(col_data)
         }
         st.json({k: f"{v:.4f}" for k, v in summary.items()})
+    
+    elif feature_type in ['categorical', 'text']:
+        st.write(f"**📝 CATEGORICAL: {col_select}**")
+        
+        # Frequency distribution
+        st.write("#### Frequency Distribution")
+        
+        value_counts = col_data.value_counts()
+        value_pcts = (value_counts / len(col_data) * 100).round(2)
+        
+        freq_df = pd.DataFrame({
+            'Value': value_counts.index,
+            'Count': value_counts.values,
+            'Percentage': value_pcts.values,
+            'Bar': ['█' * int(pct/2) for pct in value_pcts.values]
+        })
+        
+        st.dataframe(freq_df, use_container_width=True, hide_index=True)
+        
+        st.write("#### Visualizations")
+        
+        fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+        
+        # Bar plot
+        top_n = min(15, len(value_counts))
+        value_counts.head(top_n).plot(kind='bar', ax=axes[0], color='steelblue')
+        axes[0].set_title(f'Top {top_n} Categories (Frequency)')
+        axes[0].set_xlabel('Category')
+        axes[0].set_ylabel('Count')
+        axes[0].tick_params(axis='x', rotation=45)
+        
+        # Pie chart
+        if len(value_counts) <= 10:
+            value_counts.plot(kind='pie', ax=axes[1], autopct='%1.1f%%')
+            axes[1].set_title('Category Distribution')
+            axes[1].set_ylabel('')
+        else:
+            top_5 = value_counts.head(5)
+            other_sum = value_counts[5:].sum()
+            plot_data = pd.concat([top_5, pd.Series({'Others': other_sum})])
+            plot_data.plot(kind='pie', ax=axes[1], autopct='%1.1f%%')
+            axes[1].set_title('Category Distribution (Top 5 + Others)')
+            axes[1].set_ylabel('')
+        
+        plt.tight_layout()
+        st.pyplot(fig)
+        
+        st.write("#### Summary Statistics")
+        summary = {
+            'Total Values': len(col_data),
+            'Unique Values': col_data.nunique(),
+            'Most Common': col_data.value_counts().index[0],
+            'Frequency (Most Common)': col_data.value_counts().values[0],
+            'Missing Count': df[col_select].isnull().sum()
+        }
+        st.json({k: str(v) for k, v in summary.items()})
 
 def data_cleaning_eda_main(df):
     """Main data cleaning and EDA function"""
