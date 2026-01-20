@@ -375,6 +375,7 @@ def test_normality(data):
     return {"Shapiro-Wilk p-value": f"{shapiro_p:.6f}", "Anderson-Darling": f"{anderson_result.statistic:.6f}", "Skewness": f"{stats.skew(data_clean):.4f}", "Kurtosis": f"{stats.kurtosis(data_clean):.4f}", "Normal?": "✅ YES" if shapiro_p > 0.05 else "❌ NO"}
 
 def recommend_transformation(data):
+    """Provide comprehensive transformation recommendations"""
     data_clean = data.dropna()
     skewness = abs(stats.skew(data_clean))
     has_negative = (data_clean < 0).any()
@@ -384,24 +385,135 @@ def recommend_transformation(data):
     
     if skewness > 2:
         if not has_negative and not has_zero:
-            recommendations.append(("Log", "🟢🟢🟢 BEST CHOICE: Excellent for high right-skew (positive only)"))
-            recommendations.append(("Box-Cox", "🟢 GOOD: Auto-optimal with positive data"))
-            recommendations.append(("Yeo-Johnson", "🟡 OK: Works with any values"))
+            recommendations.append({
+                "name": "Log Transformation",
+                "rating": "🟢🟢🟢 BEST CHOICE",
+                "why": "Perfect for high right-skewed data (skewness > 2). Reduces extreme values.",
+                "when_use": "Income, prices, sales - power law distributions",
+                "expected_impact": f"Reduces skewness from {skewness:.2f} to <0.5. R² +3-8%",
+                "trade_offs": "Positive values only. Less interpretable than original.",
+                "alternatives": "Box-Cox (auto-optimal), Yeo-Johnson (flexible)",
+                "example": "[1,2,3,100,200] → [0, 0.69, 1.10, 4.61, 5.30]",
+                "formula": "X_new = ln(X)"
+            })
+            recommendations.append({
+                "name": "Box-Cox Transformation",
+                "rating": "🟢 GOOD CHOICE",
+                "why": "Auto-finds optimal power transformation. Data-driven.",
+                "when_use": "Automatic optimization with right-skewed data",
+                "expected_impact": "Similar to Log. R² +2-7%",
+                "trade_offs": "Requires positive. Less interpretable than Log.",
+                "alternatives": "Log (simpler), Yeo-Johnson (any values)",
+                "example": "Finds λ=0.3, applies X^0.3",
+                "formula": "X_new = (X^λ - 1) / λ"
+            })
+            recommendations.append({
+                "name": "Yeo-Johnson Transformation",
+                "rating": "🟡 OK CHOICE",
+                "why": "Handles ANY values. Most flexible.",
+                "when_use": "Data with negative/zero values",
+                "expected_impact": "Less aggressive than Log. R² +1-5%",
+                "trade_offs": "Slower. Less effective than Log for positive-only.",
+                "alternatives": "Log (positive), Box-Cox (optimized)",
+                "example": "Works with [-100, -50, 0, 10, 100]",
+                "formula": "X_new = Yeo-Johnson transform"
+            })
         else:
-            recommendations.append(("Yeo-Johnson", "🟢🟢🟢 BEST CHOICE: Only option for negative/zero"))
-            recommendations.append(("Box-Cox", "❌ WON'T WORK: Requires positive values"))
+            recommendations.append({
+                "name": "Yeo-Johnson Transformation",
+                "rating": "🟢🟢🟢 ONLY CHOICE",
+                "why": "Only method for negative/zero values with high skew.",
+                "when_use": "Temperature, profit/loss, net change",
+                "expected_impact": "Significant reduction. R² +2-6%",
+                "trade_offs": "Computationally intensive.",
+                "alternatives": "None - use this for your data",
+                "example": "[-100, -50, 0, 10, 100] all handled",
+                "formula": "X_new = Yeo-Johnson transform"
+            })
+            recommendations.append({
+                "name": "Box-Cox Transformation",
+                "rating": "❌ CANNOT USE",
+                "why": "Requires strictly positive values.",
+                "when_use": "Never - data incompatible",
+                "expected_impact": "N/A",
+                "trade_offs": "Will fail with your data.",
+                "alternatives": "Use Yeo-Johnson instead",
+                "example": "Cannot handle negative values",
+                "formula": "Not applicable"
+            })
     elif skewness > 1:
         if not has_negative and not has_zero:
-            recommendations.append(("Square Root", "🟢🟢🟢 BEST CHOICE: Perfect for moderate skew"))
-            recommendations.append(("Log", "🟢 GOOD: Also works"))
-            recommendations.append(("Yeo-Johnson", "🟡 OK: More flexible"))
+            recommendations.append({
+                "name": "Square Root Transformation",
+                "rating": "🟢🟢🟢 BEST CHOICE",
+                "why": "Less aggressive than Log. Perfect for moderate skew.",
+                "when_use": "Count data, distances - when scale matters",
+                "expected_impact": f"Reduce from {skewness:.2f}. R² +2-5%",
+                "trade_offs": "Weaker than Log. Some interpretability lost.",
+                "alternatives": "Log (stronger), Yeo-Johnson (flexible)",
+                "example": "[1,4,9,16,100] → [1, 2, 3, 4, 10]",
+                "formula": "X_new = √X"
+            })
+            recommendations.append({
+                "name": "Log Transformation",
+                "rating": "🟢 GOOD CHOICE",
+                "why": "Stronger than Square Root. May be excessive.",
+                "when_use": "If Square Root insufficient",
+                "expected_impact": "More aggressive. R² +2-6%",
+                "trade_offs": "May over-correct. Less interpretable.",
+                "alternatives": "Square Root (gentler)",
+                "example": "Stronger transformation",
+                "formula": "X_new = ln(X)"
+            })
+            recommendations.append({
+                "name": "Yeo-Johnson Transformation",
+                "rating": "🟡 OK CHOICE",
+                "why": "Flexible but unnecessary for positive-only.",
+                "when_use": "Want flexibility",
+                "expected_impact": "Like Square Root. R² +1-4%",
+                "trade_offs": "Overkill for positive data.",
+                "alternatives": "Square Root (simpler)",
+                "example": "Works but Square Root better",
+                "formula": "X_new = Yeo-Johnson"
+            })
         else:
-            recommendations.append(("Yeo-Johnson", "🟢🟢🟢 BEST CHOICE: Flexible option"))
+            recommendations.append({
+                "name": "Yeo-Johnson Transformation",
+                "rating": "🟢🟢🟢 BEST CHOICE",
+                "why": "Only option for moderate skew + negative/zero.",
+                "when_use": "Net income, margins, temp changes",
+                "expected_impact": "Effective. R² +2-5%",
+                "trade_offs": "Computational cost.",
+                "alternatives": "None - only option",
+                "example": "[-50, -10, 0, 20, 100]",
+                "formula": "X_new = Yeo-Johnson"
+            })
     else:
-        recommendations.append(("Z-Score", "🟢🟢🟢 BEST CHOICE: Data near normal, just standardize"))
-        recommendations.append(("Min-Max", "🟡 OK: Normalization alternative"))
+        recommendations.append({
+            "name": "Z-Score Standardization",
+            "rating": "🟢🟢🟢 BEST CHOICE",
+            "why": "Data already near-normal. Just standardize.",
+            "when_use": "Skewness <1. Data well-distributed.",
+            "expected_impact": "Center at 0, scale σ=1. R² +0-2%",
+            "trade_offs": "No shape change.",
+            "alternatives": "Min-Max (different scale)",
+            "example": "[10,20,30,40,50] → [-1.41, -0.71, 0, 0.71, 1.41]",
+            "formula": "X_new = (X - μ) / σ"
+        })
+        recommendations.append({
+            "name": "Min-Max Normalization",
+            "rating": "🟡 OK CHOICE",
+            "why": "Alt standardization. Scales to [0,1].",
+            "when_use": "Need [0,1] range",
+            "expected_impact": "Similar to Z-Score. R² +0-2%",
+            "trade_offs": "Sensitive to outliers.",
+            "alternatives": "Z-Score (more stable)",
+            "example": "[10,20,30,40,50] → [0, 0.25, 0.5, 0.75, 1]",
+            "formula": "X_new = (X - min) / (max - min)"
+        })
     
     return recommendations
+
 
 def apply_transformation(data, method):
     data_clean = data.dropna()
@@ -1947,8 +2059,36 @@ def normality_and_transform(df):
     st.dataframe(pd.DataFrame(list(original_results.items()), columns=['Test', 'Result']), use_container_width=True)
     recommendations = recommend_transformation(data)
     st.write("#### 2️⃣ Transformation Recommendations")
-    for trans_name, explanation in recommendations:
-        st.write(f"- {explanation}")
+    
+    for rec in recommendations:
+        with st.expander(f"{rec['rating']} {rec['name']}", expanded=(rec['rating'].count('🟢') > 0 or 'ONLY' in rec['rating'])):
+            col1, col2 = st.columns([1, 1])
+            
+            with col1:
+                st.write("**Why Choose This?**")
+                st.write(rec['why'])
+                
+                st.write("**When to Use:**")
+                st.write(rec['when_use'])
+                
+                st.write("**Formula:**")
+                st.write(f"`{rec['formula']}`")
+            
+            with col2:
+                st.write("**Expected Impact:**")
+                st.write(rec['expected_impact'])
+                
+                st.write("**Trade-offs:**")
+                st.write(rec['trade_offs'])
+                
+                st.write("**Alternatives:**")
+                st.write(rec['alternatives'])
+            
+            st.divider()
+            
+            st.write("**Real Example:**")
+            st.write(rec['example'])
+    
     st.write("#### 3️⃣ Apply Transformation")
     trans_method = st.selectbox("Select method:", ["Log", "Square Root", "Box-Cox", "Yeo-Johnson", "Z-Score", "Min-Max"], index=0, key="trans_select")
     transformed_data, explanation, success = apply_transformation(data, trans_method)
