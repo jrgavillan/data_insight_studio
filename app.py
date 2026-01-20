@@ -17,6 +17,143 @@ import seaborn as sns
 import warnings
 warnings.filterwarnings('ignore')
 
+
+# ============================================================================
+# SMART DATA CLEANING FUNCTIONS
+# ============================================================================
+
+def detect_feature_type(series):
+    """Detect if column is numeric, categorical, date, or mixed"""
+    series_clean = series.dropna()
+    
+    if len(series_clean) == 0:
+        return 'unknown'
+    
+    # Try numeric
+    numeric_attempt = pd.to_numeric(series_clean, errors='coerce')
+    numeric_success_rate = numeric_attempt.notna().sum() / len(series_clean)
+    
+    if numeric_success_rate > 0.8:
+        return 'numeric'
+    
+    # Check for dates
+    try:
+        pd.to_datetime(series_clean, errors='coerce')
+        date_success = pd.to_datetime(series_clean, errors='coerce').notna().sum() / len(series_clean)
+        if date_success > 0.8:
+            return 'date'
+    except:
+        pass
+    
+    # Check unique values
+    unique_ratio = series_clean.nunique() / len(series_clean)
+    
+    if unique_ratio < 0.1:  # Few unique values
+        return 'categorical'
+    elif unique_ratio < 0.5:
+        return 'categorical'
+    else:
+        return 'text'
+
+def clean_numeric_column(series, method='extract_numbers'):
+    """Clean numeric column based on method"""
+    result = series.copy()
+    
+    if method == 'extract_numbers':
+        # Remove all non-numeric except decimal and minus
+        result = result.astype(str).str.replace(r'[^0-9.-]', '', regex=True)
+        result = pd.to_numeric(result, errors='coerce')
+    
+    elif method == 'remove_currency':
+        # Remove currency symbols
+        result = result.astype(str).str.replace(r'[$€¥₹₽]', '', regex=True)
+        result = result.str.replace(',', '')
+        result = pd.to_numeric(result, errors='coerce')
+    
+    elif method == 'remove_percentage':
+        # Remove % and convert to decimal
+        result = result.astype(str).str.replace('%', '', regex=False)
+        result = pd.to_numeric(result, errors='coerce') / 100
+    
+    elif method == 'remove_units':
+        # Remove common units
+        result = result.astype(str).str.replace(r'(kg|g|lb|oz|mph|km/h|°C|°F|m|cm|inch)', '', regex=True, flags=re.IGNORECASE)
+        result = result.str.replace(r'[^0-9.-]', '', regex=True)
+        result = pd.to_numeric(result, errors='coerce')
+    
+    elif method == 'remove_commas':
+        # Remove thousands separators
+        result = result.astype(str).str.replace(',', '', regex=False)
+        result = pd.to_numeric(result, errors='coerce')
+    
+    elif method == 'trim_whitespace':
+        # Trim spaces and convert
+        result = result.astype(str).str.strip()
+        result = pd.to_numeric(result, errors='coerce')
+    
+    elif method == 'smart_convert':
+        # Try to be smart about conversion
+        result = series.astype(str).str.strip()
+        result = result.str.replace(r'[$€¥%,]', '', regex=True)
+        result = result.str.replace(r'[^0-9.-]', '', regex=True)
+        result = pd.to_numeric(result, errors='coerce')
+    
+    return result
+
+def clean_categorical_column(series, method='remove_special_chars'):
+    """Clean categorical column based on method"""
+    result = series.copy()
+    
+    if method == 'remove_special_chars':
+        # Remove special characters, keep alphanumeric and spaces
+        result = result.astype(str).str.replace(r'[!@#$%^&*()_+=\[\]{};:\'\".,<>?/\\|`~-]', '', regex=True)
+        result = result.str.strip()
+    
+    elif method == 'trim_whitespace':
+        # Trim leading/trailing spaces
+        result = result.astype(str).str.strip()
+    
+    elif method == 'lowercase':
+        # Convert to lowercase for consistency
+        result = result.astype(str).str.lower()
+        result = result.str.strip()
+    
+    elif method == 'remove_duplicates_spaces':
+        # Remove multiple spaces
+        result = result.astype(str).str.replace(r' +', ' ', regex=True)
+        result = result.str.strip()
+    
+    elif method == 'standardize':
+        # Comprehensive standardization
+        result = result.astype(str).str.strip()
+        result = result.str.replace(r' +', ' ', regex=True)
+        result = result.str.lower()
+    
+    elif method == 'remove_numbers':
+        # Remove numbers, keep text only
+        result = result.astype(str).str.replace(r'[0-9]', '', regex=True)
+        result = result.str.strip()
+    
+    return result
+
+def handle_missing_values(series, method='nan'):
+    """Handle missing value markers in text"""
+    result = series.copy()
+    missing_markers = ['n/a', 'na', 'null', 'none', 'nan', '-', '?', '---', 'unknown', 'n.a.', 'n.a', 'n/a.']
+    
+    if method == 'replace_with_nan':
+        # Replace text missing markers with actual NaN
+        for marker in missing_markers:
+            result = result.astype(str).str.replace(marker, '', regex=False, case=False)
+        result = result.mask(result.astype(str).str.strip() == '', np.nan)
+    
+    elif method == 'keep_marker':
+        # Keep as is, but mark them
+        pass
+    
+    return result
+
+
 st.set_page_config(page_title="Data Insight Studio", layout="wide", initial_sidebar_state="expanded")
 
 CONFIG_FILE = "api_config.txt"
@@ -139,13 +276,14 @@ def analyze_data_quality(df):
     
     st.divider()
     
-    st.write("#### 🔍 Data Error Detection & Interactive Cleaning")
+    st.write("#### 🔍 Smart Data Cleaning (Auto-Detect & Fix)")
     
     errors_found = []
     error_details = {}
     
     # Analyze each column for errors
     for col in df.columns:
+        feature_type = detect_feature_type(df[col])
         col_errors = []
         
         if df[col].dtype == 'object':
@@ -153,39 +291,40 @@ def analyze_data_quality(df):
             try:
                 numeric_check = pd.to_numeric(df[col], errors='coerce')
                 non_numeric_count = numeric_check.isnull().sum() - df[col].isnull().sum()
-                if non_numeric_count > 0:
-                    # Get examples of problematic values
+                if non_numeric_count > 0 and feature_type == 'numeric':
                     non_numeric_mask = (pd.to_numeric(df[col], errors='coerce').isnull()) & (df[col].notnull())
                     examples = df[col][non_numeric_mask].unique()[:10]
                     
                     col_errors.append({
                         'type': 'non-numeric',
                         'count': non_numeric_count,
-                        'examples': examples
+                        'examples': examples,
+                        'feature_type': feature_type
                     })
             except:
                 pass
         
         # Check for special characters
-        special_chars_mask = df[col].astype(str).str.contains(r'[!@#$%^&*()_+=\[\]{};:\'",.<>?/\|`~-]', regex=True)
+        special_chars_mask = df[col].astype(str).str.contains(r'[^\w\s]', regex=True)
         special_chars = special_chars_mask.sum()
-        if special_chars > 0 and df[col].dtype == 'object':
+        if special_chars > 0 and df[col].dtype == 'object' and feature_type in ['categorical', 'text']:
             examples = df[col][special_chars_mask].unique()[:10]
             col_errors.append({
                 'type': 'special-chars',
                 'count': special_chars,
-                'examples': examples
+                'examples': examples,
+                'feature_type': feature_type
             })
         
         if col_errors:
-            errors_found.append((col, col_errors))
+            errors_found.append((col, col_errors, feature_type))
             error_details[col] = col_errors
     
-    # Display errors with detailed analysis and cleaning options
+    # Display errors with actual cleaning buttons
     if errors_found:
-        st.warning("⚠️ Data Quality Issues Found!")
+        st.warning("🧹 Data Quality Issues Found - Click to Clean!")
         
-        for col_name, col_error_list in errors_found:
+        for col_name, col_error_list, feature_type in errors_found:
             for error_idx, error_info in enumerate(col_error_list):
                 error_type = error_info['type']
                 count = error_info['count']
@@ -193,168 +332,102 @@ def analyze_data_quality(df):
                 percentage = (count / len(df) * 100)
                 
                 if error_type == 'non-numeric':
-                    title = f"🔢 {col_name}: {count} non-numeric values ({percentage:.1f}%)"
+                    title = f"🔢 {col_name}: {count} non-numeric values ({percentage:.1f}%) → NUMERIC"
                 else:
-                    title = f"⚠️ {col_name}: {count} special characters ({percentage:.1f}%)"
+                    title = f"📝 {col_name}: {count} special chars ({percentage:.1f}%) → CLEAN"
                 
                 with st.expander(title, expanded=True):
-                    # Show metrics
                     col1, col2, col3, col4 = st.columns(4)
-                    col1.metric("Issues Found", count)
-                    col2.metric("Percentage", f"{percentage:.2f}%")
-                    col3.metric("Data Type", str(df[col_name].dtype))
-                    col4.metric("Total Rows", len(df))
+                    col1.metric("Issues", count)
+                    col2.metric("Percent", f"{percentage:.1f}%")
+                    col3.metric("Type", feature_type.title())
+                    col4.metric("Action", "Clean ✓")
                     
                     st.divider()
                     
-                    # Show examples
-                    st.write("**📋 Examples of Problematic Data:**")
-                    for i, example in enumerate(examples[:5], 1):
+                    st.write("**📋 Sample Problematic Values:**")
+                    for i, example in enumerate(examples[:3], 1):
                         st.code(f"{i}. {repr(example)}", language="text")
                     
                     st.divider()
                     
-                    # Explain the problem and solutions
-                    if error_type == 'non-numeric':
-                        st.write("**❌ What's Wrong:**")
-                        st.write("""
-This column appears to be numeric but contains text/symbols mixed with numbers. 
-Common issues:
-- Currency symbols: `$100`, `€50.50`, `¥1000`
-- Percentage signs: `50%`, `12.5%`
-- Thousands separator: `1,000`, `2,500.50`
-- Text mixed in: `123abc`, `45XL`, `2-pack`
-- Units included: `100kg`, `50mph`, `25°C`
-- Whitespace: `  123  ` (leading/trailing spaces)
-- Missing values as text: `N/A`, `null`, `None`, `-`, `?`
-- Fractions: `1/2`, `3/4`, `1 1/2`
-                        """)
+                    if error_type == 'non-numeric' and feature_type == 'numeric':
+                        st.write("**🔢 NUMERIC COLUMN - Choose Cleaning Method:**")
                         
-                        st.write("**✅ How to Fix It:**")
-                        
-                        col_fix1, col_fix2 = st.columns(2)
-                        
-                        with col_fix1:
-                            st.write("**Option 1: Extract Numbers Only**")
-                            if st.button("🧹 Remove all non-numeric chars", key=f"fix1_{col_name}_{error_idx}"):
-                                df_fixed = df.copy()
-                                # Keep only digits, decimal points, and minus signs
-                                df_fixed[col_name] = df_fixed[col_name].astype(str).str.replace(r'[^0-9.-]', '', regex=True)
-                                df_fixed[col_name] = pd.to_numeric(df_fixed[col_name], errors='coerce')
-                                
-                                st.success("✅ Cleaned!")
-                                
-                                # Show before/after
-                                comparison = pd.DataFrame({
-                                    'Original': df[col_name].head(8),
-                                    'Fixed': df_fixed[col_name].head(8)
-                                })
-                                st.dataframe(comparison, use_container_width=True)
-                                
-                                new_issues = df_fixed[col_name].isnull().sum()
-                                st.info(f"**Results:** {count} problematic values handled. {new_issues} now NaN (couldn't convert)")
-                                
-                                if st.button("✅ Apply This Fix", key=f"apply1_{col_name}_{error_idx}"):
-                                    st.session_state.cleaned_df = df_fixed
-                                    st.success(f"✅ Applied! Use cleaned data for analysis.")
-                        
-                        with col_fix2:
-                            st.write("**Option 2: Smart Conversion**")
-                            if st.button("📊 Convert to numeric (auto)", key=f"fix2_{col_name}_{error_idx}"):
-                                df_fixed = df.copy()
-                                df_fixed[col_name] = pd.to_numeric(df_fixed[col_name], errors='coerce')
-                                
-                                st.success("✅ Converted!")
-                                
-                                # Show before/after
-                                comparison = pd.DataFrame({
-                                    'Original': df[col_name].head(8),
-                                    'Fixed': df_fixed[col_name].head(8)
-                                })
-                                st.dataframe(comparison, use_container_width=True)
-                                
-                                new_count = df_fixed[col_name].isnull().sum()
-                                st.info(f"**Results:** {count} values couldn't convert. {new_count} now NaN")
-                                
-                                if st.button("✅ Apply This Fix", key=f"apply2_{col_name}_{error_idx}"):
-                                    st.session_state.cleaned_df = df_fixed
-                                    st.success(f"✅ Applied! Use cleaned data for analysis.")
-                        
-                        st.divider()
-                        
-                        st.write("**Option 3: Handle Problematic Rows**")
-                        action = st.selectbox(
-                            "What to do with rows that have errors?",
+                        col_method = st.radio(
+                            "Select cleaning method:",
                             [
-                                "Drop rows with non-numeric values",
-                                "Replace errors with NaN (missing value)",
-                                "Replace errors with 0",
-                                "Replace errors with column mean"
+                                ("🧹 Extract Numbers Only (keep digits + decimal)", "extract_numbers"),
+                                ("💵 Remove Currency ($, €, ¥, etc)", "remove_currency"),
+                                ("📊 Remove Percentage Signs (%)", "remove_percentage"),
+                                ("🔧 Remove Units (kg, mph, °C, etc)", "remove_units"),
+                                ("1,000 → Remove Commas (thousands)", "remove_commas"),
+                                ("  Trim Whitespace (spaces)", "trim_whitespace"),
+                                ("⚡ Smart Convert (all of above)", "smart_convert")
                             ],
-                            key=f"action_{col_name}_{error_idx}"
+                            format_func=lambda x: x[0],
+                            key=f"method_{col_name}_{error_idx}"
                         )
                         
-                        if st.button("🔄 Preview & Apply", key=f"preview_{col_name}_{error_idx}"):
-                            df_fixed = df.copy()
-                            non_numeric_mask = (pd.to_numeric(df_fixed[col_name], errors='coerce').isnull()) & (df_fixed[col_name].notnull())
-                            
-                            if action == "Drop rows with non-numeric values":
-                                before_count = len(df_fixed)
-                                df_fixed = df_fixed[~non_numeric_mask]
-                                st.success(f"✅ Dropped {before_count - len(df_fixed)} rows with errors")
-                                st.info(f"Remaining rows: {len(df_fixed)}")
-                            
-                            elif action == "Replace errors with NaN (missing value)":
-                                df_fixed.loc[non_numeric_mask, col_name] = np.nan
-                                st.success(f"✅ Replaced {non_numeric_mask.sum()} values with NaN")
-                            
-                            elif action == "Replace errors with 0":
-                                df_fixed.loc[non_numeric_mask, col_name] = 0
-                                st.success(f"✅ Replaced {non_numeric_mask.sum()} values with 0")
-                            
-                            elif action == "Replace errors with column mean":
-                                col_mean = pd.to_numeric(df_fixed[col_name], errors='coerce').mean()
-                                df_fixed.loc[non_numeric_mask, col_name] = col_mean
-                                st.success(f"✅ Replaced {non_numeric_mask.sum()} values with mean: {col_mean:.2f}")
-                            
-                            st.write("**Preview of Fixed Data:**")
-                            st.dataframe(df_fixed[[col_name]].head(10), use_container_width=True)
-                            
-                            if st.button("✅ Apply This Fix", key=f"apply3_{col_name}_{error_idx}"):
-                                st.session_state.cleaned_df = df_fixed
-                                st.success(f"✅ Applied! Use cleaned data for analysis.")
-                    
-                    else:  # special-chars error
-                        st.write("**❌ What's Wrong:**")
-                        st.write("""
-This column contains special characters that may cause issues:
-- Symbols in names: `John@Smith`, `Mary-Anne`, `O'Brien`
-- Punctuation: `Dr.`, `Mrs.`, `Prof.`
-- Special chars in codes: `PROD#123`, `Item-456`
-- Encoding issues: `Café`, `naïve`, garbled characters
-- HTML/XML: `<p>text</p>`, `&nbsp;`
-                        """)
+                        method = col_method[1]
                         
-                        st.write("**✅ How to Fix It:**")
-                        
-                        if st.button("🧹 Remove all special characters", key=f"fix_special_{col_name}_{error_idx}"):
-                            df_fixed = df.copy()
-                            df_fixed[col_name] = df_fixed[col_name].astype(str).str.replace(r'[!@#$%^&*()_+=\[\]{};:\'",.<>?/\|`~-]', '', regex=True).str.strip()
+                        if st.button(f"✅ APPLY: {col_method[0]}", key=f"apply_{col_name}_{error_idx}", use_container_width=True):
+                            df_temp = df.copy()
+                            df_temp[col_name] = clean_numeric_column(df_temp[col_name], method)
                             
-                            st.success("✅ Cleaned!")
+                            st.success("✅ CLEANING APPLIED!")
                             
-                            # Show before/after
+                            st.write("**Before → After:**")
                             comparison = pd.DataFrame({
-                                'Original': df[col_name].head(8),
-                                'Fixed': df_fixed[col_name].head(8)
+                                'Original': df[col_name].head(10),
+                                'Cleaned': df_temp[col_name].head(10)
                             })
-                            st.dataframe(comparison, use_container_width=True)
+                            st.dataframe(comparison, use_container_width=True, hide_index=True)
                             
-                            st.info(f"**Results:** Removed {count} special characters")
+                            issues_remaining = df_temp[col_name].isnull().sum() - df[col_name].isnull().sum()
+                            st.info(f"✅ Fixed {count} values | {issues_remaining} couldn't convert (→ NaN)")
                             
-                            if st.button("✅ Apply This Fix", key=f"apply_special_{col_name}_{error_idx}"):
-                                st.session_state.cleaned_df = df_fixed
-                                st.success(f"✅ Applied! Use cleaned data for analysis.")
+                            if st.button("💾 Save Cleaned Data", key=f"save_{col_name}_{error_idx}"):
+                                st.session_state.cleaned_df = df_temp
+                                st.success(f"✅ Saved! Use 'Cleaned' tab to continue.")
+                    
+                    elif (error_type == 'special-chars') or (error_type == 'non-numeric' and feature_type == 'categorical'):
+                        st.write("**📝 CATEGORICAL COLUMN - Choose Cleaning Method:**")
+                        
+                        col_method = st.radio(
+                            "Select cleaning method:",
+                            [
+                                ("🧹 Remove Special Characters", "remove_special_chars"),
+                                ("   Trim Whitespace (spaces)", "trim_whitespace"),
+                                ("🔤 Standardize (lowercase + clean)", "standardize"),
+                                ("🔤 Remove Duplicate Spaces", "remove_duplicates_spaces"),
+                                ("🔤 Convert to Lowercase", "lowercase"),
+                                ("#️⃣ Remove Numbers (keep text)", "remove_numbers")
+                            ],
+                            format_func=lambda x: x[0],
+                            key=f"method_cat_{col_name}_{error_idx}"
+                        )
+                        
+                        method = col_method[1]
+                        
+                        if st.button(f"✅ APPLY: {col_method[0]}", key=f"apply_cat_{col_name}_{error_idx}", use_container_width=True):
+                            df_temp = df.copy()
+                            df_temp[col_name] = clean_categorical_column(df_temp[col_name], method)
+                            
+                            st.success("✅ CLEANING APPLIED!")
+                            
+                            st.write("**Before → After:**")
+                            comparison = pd.DataFrame({
+                                'Original': df[col_name].head(10),
+                                'Cleaned': df_temp[col_name].head(10)
+                            })
+                            st.dataframe(comparison, use_container_width=True, hide_index=True)
+                            
+                            st.info(f"✅ Cleaned {count} values successfully")
+                            
+                            if st.button("💾 Save Cleaned Data", key=f"save_cat_{col_name}_{error_idx}"):
+                                st.session_state.cleaned_df = df_temp
+                                st.success(f"✅ Saved! Use 'Cleaned' tab to continue.")
     
     else:
         st.success("✅ No data quality issues detected!")
