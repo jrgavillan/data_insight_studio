@@ -2294,26 +2294,205 @@ def ml_predictive_analysis(df):
 
 def descriptive_stats(df):
     st.write("### 📊 Descriptive Statistics")
-    numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
-    if not numeric_cols:
-        st.error("No numeric columns")
-        return
-    col = st.selectbox("Select column:", numeric_cols, key="desc_col_select")
-    col_data = df[col].dropna()
-    stats_dict = {"Mean": f"{col_data.mean():.4f}", "Median": f"{col_data.median():.4f}", "Std Dev": f"{col_data.std():.4f}", "Min": f"{col_data.min():.4f}", "Q1": f"{col_data.quantile(0.25):.4f}", "Q3": f"{col_data.quantile(0.75):.4f}", "Max": f"{col_data.max():.4f}", "Skewness": f"{stats.skew(col_data):.4f}", "Count": len(col_data)}
-    st.dataframe(pd.DataFrame(list(stats_dict.items()), columns=['Statistic', 'Value']), use_container_width=True)
-    fig, axes = plt.subplots(2, 2, figsize=(12, 10))
-    axes[0, 0].hist(col_data, bins=30, edgecolor='black', alpha=0.7)
-    axes[0, 0].set_title('Histogram')
-    axes[0, 1].boxplot(col_data)
-    axes[0, 1].set_title('Box Plot')
-    stats.probplot(col_data, dist="norm", plot=axes[1, 0])
-    axes[1, 0].set_title('Q-Q Plot')
-    col_data.plot(kind='density', ax=axes[1, 1])
-    axes[1, 1].set_title('Density')
-    plt.tight_layout()
-    st.pyplot(fig)
-    st.success("✅ Complete!")
+    
+    # Allow selection of ALL columns, not just numeric
+    all_cols = df.columns.tolist()
+    col = st.selectbox("Select column:", all_cols, key="desc_col_select")
+    
+    # Detect feature type
+    feature_type = detect_feature_type(df[col])
+    
+    if feature_type == 'numeric':
+        st.write(f"#### 🔢 NUMERIC COLUMN: {col}")
+        
+        col_data = df[col].dropna()
+        
+        if len(col_data) == 0:
+            st.error("No data to analyze")
+            return
+        
+        # Show numeric statistics
+        col1, col2, col3, col4 = st.columns(4)
+        col1.metric("Count", len(col_data))
+        col2.metric("Mean", f"{col_data.mean():.4f}")
+        col3.metric("Median", f"{col_data.median():.4f}")
+        col4.metric("Std Dev", f"{col_data.std():.4f}")
+        
+        st.divider()
+        
+        stats_dict = {
+            "Mean": f"{col_data.mean():.4f}",
+            "Median": f"{col_data.median():.4f}",
+            "Std Dev": f"{col_data.std():.4f}",
+            "Min": f"{col_data.min():.4f}",
+            "Q1 (25%)": f"{col_data.quantile(0.25):.4f}",
+            "Q3 (75%)": f"{col_data.quantile(0.75):.4f}",
+            "IQR": f"{col_data.quantile(0.75) - col_data.quantile(0.25):.4f}",
+            "Max": f"{col_data.max():.4f}",
+            "Range": f"{col_data.max() - col_data.min():.4f}",
+            "Skewness": f"{stats.skew(col_data):.4f}",
+            "Kurtosis": f"{stats.kurtosis(col_data):.4f}",
+            "Missing": df[col].isnull().sum()
+        }
+        
+        st.dataframe(pd.DataFrame(list(stats_dict.items()), columns=['Statistic', 'Value']), use_container_width=True)
+        
+        st.divider()
+        
+        # Visualizations
+        fig, axes = plt.subplots(2, 2, figsize=(12, 10))
+        axes[0, 0].hist(col_data, bins=30, edgecolor='black', alpha=0.7, color='steelblue')
+        axes[0, 0].set_title('Histogram')
+        axes[0, 0].set_xlabel(col)
+        axes[0, 0].set_ylabel('Frequency')
+        
+        axes[0, 1].boxplot(col_data)
+        axes[0, 1].set_title('Box Plot')
+        axes[0, 1].set_ylabel(col)
+        
+        stats.probplot(col_data, dist="norm", plot=axes[1, 0])
+        axes[1, 0].set_title('Q-Q Plot')
+        
+        col_data.plot(kind='density', ax=axes[1, 1], color='steelblue')
+        axes[1, 1].set_title('Density Plot')
+        axes[1, 1].set_xlabel(col)
+        
+        plt.tight_layout()
+        st.pyplot(fig)
+        
+        st.success("✅ Complete!")
+    
+    elif feature_type in ['categorical', 'text']:
+        st.write(f"#### 📝 CATEGORICAL COLUMN: {col}")
+        
+        col_data = df[col].dropna()
+        
+        if len(col_data) == 0:
+            st.error("No data to analyze")
+            return
+        
+        # Key metrics
+        col1, col2, col3, col4 = st.columns(4)
+        col1.metric("Total Values", len(col_data))
+        col2.metric("Unique Values", col_data.nunique())
+        col3.metric("Most Common", col_data.value_counts().index[0])
+        col4.metric("Missing", df[col].isnull().sum())
+        
+        st.divider()
+        
+        # Frequency distribution
+        st.write("#### 📊 Frequency Distribution")
+        
+        value_counts = col_data.value_counts()
+        value_pcts = (value_counts / len(col_data) * 100).round(2)
+        
+        freq_df = pd.DataFrame({
+            'Value': value_counts.index,
+            'Count': value_counts.values,
+            'Percentage': value_pcts.values,
+            'Bar': ['█' * int(pct/2) for pct in value_pcts.values]
+        })
+        
+        st.dataframe(freq_df, use_container_width=True, hide_index=True)
+        
+        st.divider()
+        
+        # Visualizations
+        fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+        
+        # Bar plot
+        top_n = min(15, len(value_counts))
+        value_counts.head(top_n).plot(kind='bar', ax=axes[0], color='steelblue')
+        axes[0].set_title(f'Top {top_n} Categories (Frequency)')
+        axes[0].set_xlabel('Category')
+        axes[0].set_ylabel('Count')
+        axes[0].tick_params(axis='x', rotation=45)
+        
+        # Pie chart
+        if len(value_counts) <= 10:
+            value_counts.plot(kind='pie', ax=axes[1], autopct='%1.1f%%')
+            axes[1].set_title('Category Distribution')
+            axes[1].set_ylabel('')
+        else:
+            top_5 = value_counts.head(5)
+            other_sum = value_counts[5:].sum()
+            plot_data = pd.concat([top_5, pd.Series({'Others': other_sum})])
+            plot_data.plot(kind='pie', ax=axes[1], autopct='%1.1f%%')
+            axes[1].set_title('Category Distribution (Top 5 + Others)')
+            axes[1].set_ylabel('')
+        
+        plt.tight_layout()
+        st.pyplot(fig)
+        
+        st.divider()
+        
+        # Data quality analysis for categorical
+        st.write("#### 🔍 Data Quality Analysis & Recommendations")
+        
+        issues_found = []
+        recommendations = []
+        
+        # Check for mixed case
+        if col_data.dtype == 'object':
+            str_data = col_data.astype(str)
+            
+            # Check mixed case
+            has_upper = str_data.str.contains(r'[A-Z]').any()
+            has_lower = str_data.str.contains(r'[a-z]').any()
+            
+            if has_upper and has_lower:
+                issues_found.append("⚠️ Mixed case values (e.g., 'John' vs 'JOHN' vs 'john')")
+                recommendations.append("🔧 **Standardize Case**: Use 'Convert to Lowercase' cleaning option")
+            
+            # Check for leading/trailing spaces
+            has_spaces = (str_data != str_data.str.strip()).any()
+            if has_spaces:
+                issues_found.append("⚠️ Leading/trailing whitespace in values")
+                recommendations.append("🔧 **Trim Whitespace**: Use 'Trim Whitespace' cleaning option")
+            
+            # Check for duplicate spaces
+            has_dup_spaces = str_data.str.contains(r' {2,}').any()
+            if has_dup_spaces:
+                issues_found.append("⚠️ Multiple consecutive spaces in values")
+                recommendations.append("🔧 **Remove Duplicate Spaces**: Use cleaning option")
+            
+            # Check for special characters
+            has_special = str_data.str.contains(r'[!@#$%^&*()+=\[\]{};:\'",.<>?/\\|`~-]').any()
+            if has_special:
+                issues_found.append("⚠️ Special characters in categorical values")
+                recommendations.append("🔧 **Remove Special Characters**: Use cleaning option")
+            
+            # Check for very similar values
+            unique_vals = col_data.unique()
+            if len(unique_vals) > 3:
+                # Check for values that are same except for case/spaces
+                normalized = set(str(v).lower().strip() for v in unique_vals)
+                if len(normalized) < len(unique_vals):
+                    issues_found.append("⚠️ Potential duplicates with different cases/spaces")
+                    recommendations.append("🔧 **Standardize**: Use 'Standardize (lowercase + clean)' option")
+        
+        if issues_found or recommendations:
+            st.write("**Issues Detected:**")
+            for issue in issues_found:
+                st.write(f"- {issue}")
+            
+            st.write("")
+            st.write("**Recommended Corrections:**")
+            for rec in recommendations:
+                st.write(f"- {rec}")
+            
+            st.info("""
+**How to Apply Corrections:**
+1. Go to "Data Cleaning & EDA" tab
+2. Click on the "🧹 Smart Data Cleaning" section
+3. Find this column and select your cleaning method
+4. Click the button to clean
+5. Save the cleaned data
+            """)
+        else:
+            st.success("✅ No data quality issues detected!")
+        
+        st.success("✅ Analysis Complete!")
 
 def normality_and_transform(df):
     st.write("### ✨ Normality Testing & Transformations")
