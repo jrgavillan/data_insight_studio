@@ -2598,7 +2598,7 @@ def descriptive_stats(df):
         st.write("#### 🔍 Data Quality Analysis & Recommendations")
         
         issues_found = []
-        recommendations = []
+        issue_methods = {}
         
         # Check for mixed case
         if col_data.dtype == 'object':
@@ -2609,26 +2609,26 @@ def descriptive_stats(df):
             has_lower = str_data.str.contains(r'[a-z]').any()
             
             if has_upper and has_lower:
-                issues_found.append("⚠️ Mixed case values (e.g., 'John' vs 'JOHN' vs 'john')")
-                recommendations.append("🔧 **Standardize Case**: Use 'Convert to Lowercase' cleaning option")
+                issues_found.append("Mixed case values")
+                issue_methods["Mixed case values"] = ["lowercase", "standardize"]
             
             # Check for leading/trailing spaces
             has_spaces = (str_data != str_data.str.strip()).any()
             if has_spaces:
-                issues_found.append("⚠️ Leading/trailing whitespace in values")
-                recommendations.append("🔧 **Trim Whitespace**: Use 'Trim Whitespace' cleaning option")
+                issues_found.append("Leading/trailing whitespace")
+                issue_methods["Leading/trailing whitespace"] = ["trim_whitespace"]
             
             # Check for duplicate spaces
             has_dup_spaces = str_data.str.contains(r' {2,}').any()
             if has_dup_spaces:
-                issues_found.append("⚠️ Multiple consecutive spaces in values")
-                recommendations.append("🔧 **Remove Duplicate Spaces**: Use cleaning option")
+                issues_found.append("Multiple consecutive spaces")
+                issue_methods["Multiple consecutive spaces"] = ["remove_duplicates_spaces"]
             
             # Check for special characters
-            has_special = str_data.str.contains(r'[!@#$%^&*()+=\[\]{};:\'",.<>?/\\|`~-]').any()
+            has_special = str_data.str.contains(r'[^\w\s]', regex=True).any()
             if has_special:
-                issues_found.append("⚠️ Special characters in categorical values")
-                recommendations.append("🔧 **Remove Special Characters**: Use cleaning option")
+                issues_found.append("Special characters in values")
+                issue_methods["Special characters in values"] = ["remove_special_chars"]
             
             # Check for very similar values
             unique_vals = col_data.unique()
@@ -2636,27 +2636,66 @@ def descriptive_stats(df):
                 # Check for values that are same except for case/spaces
                 normalized = set(str(v).lower().strip() for v in unique_vals)
                 if len(normalized) < len(unique_vals):
-                    issues_found.append("⚠️ Potential duplicates with different cases/spaces")
-                    recommendations.append("🔧 **Standardize**: Use 'Standardize (lowercase + clean)' option")
+                    issues_found.append("Potential duplicates (different cases/spaces)")
+                    issue_methods["Potential duplicates (different cases/spaces)"] = ["standardize"]
         
-        if issues_found or recommendations:
-            st.write("**Issues Detected:**")
+        if issues_found:
+            st.warning("🔧 **Data Quality Issues Found - CLICK TO FIX:**")
+            
             for issue in issues_found:
-                st.write(f"- {issue}")
-            
-            st.write("")
-            st.write("**Recommended Corrections:**")
-            for rec in recommendations:
-                st.write(f"- {rec}")
-            
-            st.info("""
-**How to Apply Corrections:**
-1. Go to "Data Cleaning & EDA" tab
-2. Click on the "🧹 Smart Data Cleaning" section
-3. Find this column and select your cleaning method
-4. Click the button to clean
-5. Save the cleaned data
-            """)
+                with st.expander(f"⚠️ {issue}", expanded=True):
+                    methods = issue_methods.get(issue, [])
+                    
+                    st.write("**Choose cleaning method:**")
+                    
+                    method_names = {
+                        "lowercase": "🔤 Convert to Lowercase",
+                        "trim_whitespace": "   Trim Whitespace",
+                        "remove_special_chars": "🧹 Remove Special Characters",
+                        "remove_duplicates_spaces": "   Remove Duplicate Spaces",
+                        "standardize": "⚡ Standardize (lowercase + clean + trim)"
+                    }
+                    
+                    selected_method = st.selectbox(
+                        "Select method:",
+                        methods,
+                        format_func=lambda x: method_names.get(x, x),
+                        key=f"fix_{col_select}_{issue}"
+                    )
+                    
+                    if st.button(f"✅ PREVIEW & APPLY", key=f"apply_fix_{col_select}_{issue}"):
+                        df_temp = df.copy()
+                        
+                        # Apply cleaning
+                        if selected_method == "lowercase":
+                            df_temp[col_select] = df_temp[col_select].astype(str).str.lower()
+                        elif selected_method == "trim_whitespace":
+                            df_temp[col_select] = df_temp[col_select].astype(str).str.strip()
+                        elif selected_method == "remove_special_chars":
+                            df_temp[col_select] = df_temp[col_select].astype(str).str.replace(r'[^\w\s]', '', regex=True).str.strip()
+                        elif selected_method == "remove_duplicates_spaces":
+                            df_temp[col_select] = df_temp[col_select].astype(str).str.replace(r' +', ' ', regex=True).str.strip()
+                        elif selected_method == "standardize":
+                            df_temp[col_select] = df_temp[col_select].astype(str).str.strip()
+                            df_temp[col_select] = df_temp[col_select].str.replace(r' +', ' ', regex=True)
+                            df_temp[col_select] = df_temp[col_select].str.lower()
+                            df_temp[col_select] = df_temp[col_select].str.replace(r'[^\w\s]', '', regex=True)
+                        
+                        st.success("✅ Preview Generated!")
+                        
+                        st.write("**Before → After (First 10 rows):**")
+                        preview_df = pd.DataFrame({
+                            'Original': df[col_select].head(10),
+                            'Cleaned': df_temp[col_select].head(10)
+                        })
+                        st.dataframe(preview_df, use_container_width=True, hide_index=True)
+                        
+                        st.info(f"✅ Method: {method_names.get(selected_method, selected_method)}")
+                        
+                        if st.button(f"💾 SAVE CLEANED DATA", key=f"save_fix_{col_select}_{issue}"):
+                            st.session_state.cleaned_df = df_temp
+                            st.success(f"✅ Cleaned! Use 'Cleaned' tab or 'Use Cleaned Data for Analysis' button")
+        
         else:
             st.success("✅ No data quality issues detected!")
         
