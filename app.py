@@ -29,35 +29,31 @@ def detect_feature_type(series):
     if len(series_clean) == 0:
         return 'unknown'
     
-    # Check unique values FIRST
-    unique_count = series_clean.nunique()
-    unique_ratio = unique_count / len(series_clean)
-    
-    # If very few unique values, it's likely categorical (even if numeric)
-    # Rule: If ≤ 20 unique values OR unique ratio < 5%, treat as categorical
-    if unique_count <= 20 or unique_ratio < 0.05:
-        # But exclude clear numeric ranges (continuous variables)
-        numeric_attempt = pd.to_numeric(series_clean, errors='coerce')
-        numeric_success_rate = numeric_attempt.notna().sum() / len(series_clean)
-        
-        if numeric_success_rate > 0.95:  # Is numeric
-            # Check if it's actually encoded categorical
-            # Encoded categoricals typically have integer values 1-N or 0-(N-1)
-            unique_vals = sorted(numeric_attempt.dropna().unique())
-            is_small_integers = len(unique_vals) <= 20 and all(v == int(v) for v in unique_vals)
-            
-            if is_small_integers and (unique_vals == list(range(len(unique_vals))) or 
-                                     unique_vals == list(range(1, len(unique_vals) + 1))):
-                return 'categorical'  # Encoded categorical
-    
-    # Try numeric (continuous)
+    # Try numeric FIRST (since values like 133.1 are numeric)
     numeric_attempt = pd.to_numeric(series_clean, errors='coerce')
     numeric_success_rate = numeric_attempt.notna().sum() / len(series_clean)
     
-    if numeric_success_rate > 0.9:  # Mostly numeric
-        # Check if it's actually categorical (few unique values)
-        if unique_count <= 10 or unique_ratio < 0.1:
+    unique_count = series_clean.nunique()
+    unique_ratio = unique_count / len(series_clean)
+    
+    # If >90% numeric AND has many unique values (>30), it's continuous numeric
+    if numeric_success_rate > 0.9:
+        if unique_count > 30:  # Many unique values = continuous numeric
+            return 'numeric'
+        
+        # For numeric data with few unique values, check if it's encoded categorical
+        unique_vals = sorted(numeric_attempt.dropna().unique())
+        is_small_integers = all(v == int(v) for v in unique_vals)
+        
+        # Check if it's a sequence like 1,2,3,4,5 or 0,1,2,3
+        if is_small_integers and (unique_vals == list(range(len(unique_vals))) or 
+                                 unique_vals == list(range(1, len(unique_vals) + 1))):
+            return 'categorical'  # Encoded categorical (1, 2, 3, 4...)
+        
+        # If <=20 unique values and well-distributed, probably categorical
+        if unique_count <= 20:
             return 'categorical'
+        
         return 'numeric'
     
     # Check for dates
@@ -69,8 +65,10 @@ def detect_feature_type(series):
     except:
         pass
     
-    # Check unique values again for text
-    if unique_ratio < 0.1:  # Few unique values
+    # For non-numeric text data, use unique value ratio
+    if unique_count <= 20:
+        return 'categorical'
+    elif unique_ratio < 0.1:  # < 10% unique
         return 'categorical'
     elif unique_ratio < 0.5:
         return 'categorical'
@@ -2552,71 +2550,107 @@ def descriptive_stats(df):
         st.write("#### 📊 Frequency Distribution")
         
         value_counts = col_data.value_counts()
-        value_pcts = (value_counts / len(col_data) * 100).round(2)
         
-        freq_df = pd.DataFrame({
-            'Value': value_counts.index,
-            'Count': value_counts.values,
-            'Percentage': value_pcts.values,
-            'Bar': ['█' * int(pct/2) for pct in value_pcts.values]
-        })
+        # If too many unique values, suggest it might be numeric
+        if len(value_counts) > 50:
+            st.warning(f"⚠️ This column has {len(value_counts)} unique values. It might be better analyzed as NUMERIC.")
+            st.info("**Tip:** Columns with many unique values are typically continuous numeric variables. Check the data type!")
+            
+            st.write(f"**Top 20 Values:**")
+            top_20 = value_counts.head(20)
+            value_pcts = (top_20 / len(col_data) * 100).round(2)
+            
+            freq_df = pd.DataFrame({
+                'Value': top_20.index,
+                'Count': top_20.values,
+                'Percentage': value_pcts.values
+            })
+            st.dataframe(freq_df, use_container_width=True, hide_index=True)
+            
+            # Simple visualization for top values
+            fig, ax = plt.subplots(figsize=(12, 6))
+            top_20.plot(kind='bar', ax=ax, color='steelblue')
+            ax.set_title('Top 20 Values')
+            ax.set_xlabel('Value')
+            ax.set_ylabel('Count')
+            plt.xticks(rotation=45)
+            plt.tight_layout()
+            st.pyplot(fig)
         
-        st.dataframe(freq_df, use_container_width=True, hide_index=True)
-        
-        st.divider()
-        
-        # Visualizations
-        fig, axes = plt.subplots(1, 2, figsize=(14, 5))
-        
-        # Bar plot
-        top_n = min(15, len(value_counts))
-        value_counts.head(top_n).plot(kind='bar', ax=axes[0], color='steelblue')
-        axes[0].set_title(f'Top {top_n} Categories (Frequency)')
-        axes[0].set_xlabel('Category')
-        axes[0].set_ylabel('Count')
-        axes[0].tick_params(axis='x', rotation=45)
-        
-        # Pie chart
-        if len(value_counts) <= 10:
-            value_counts.plot(kind='pie', ax=axes[1], autopct='%1.1f%%')
-            axes[1].set_title('Category Distribution')
-            axes[1].set_ylabel('')
         else:
-            top_5 = value_counts.head(5)
-            other_sum = value_counts[5:].sum()
-            plot_data = pd.concat([top_5, pd.Series({'Others': other_sum})])
-            plot_data.plot(kind='pie', ax=axes[1], autopct='%1.1f%%')
-            axes[1].set_title('Category Distribution (Top 5 + Others)')
-            axes[1].set_ylabel('')
-        
-        plt.tight_layout()
+            # Normal frequency distribution for reasonable number of categories
+            value_pcts = (value_counts / len(col_data) * 100).round(2)
+            
+            freq_df = pd.DataFrame({
+                'Value': value_counts.index,
+                'Count': value_counts.values,
+                'Percentage': value_pcts.values,
+                'Bar': ['█' * int(pct/2) for pct in value_pcts.values]
+            })
+            
+            st.dataframe(freq_df, use_container_width=True, hide_index=True)
+            
+            st.divider()
+            
+            # Visualizations
+            try:
+                fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+                
+                # Bar plot
+                top_n = min(15, len(value_counts))
+                value_counts.head(top_n).plot(kind='bar', ax=axes[0], color='steelblue')
+                axes[0].set_title(f'Top {top_n} Categories (Frequency)')
+                axes[0].set_xlabel('Category')
+                axes[0].set_ylabel('Count')
+                axes[0].tick_params(axis='x', rotation=45)
+                
+                # Pie chart
+                if len(value_counts) <= 10:
+                    value_counts.plot(kind='pie', ax=axes[1], autopct='%1.1f%%')
+                    axes[1].set_title('Category Distribution')
+                    axes[1].set_ylabel('')
+                else:
+                    top_5 = value_counts.head(5)
+                    other_sum = value_counts[5:].sum()
+                    plot_data = pd.concat([top_5, pd.Series({'Others': other_sum})])
+                    plot_data.plot(kind='pie', ax=axes[1], autopct='%1.1f%%')
+                    axes[1].set_title('Category Distribution (Top 5 + Others)')
+                    axes[1].set_ylabel('')
+                
+                plt.tight_layout()
+                st.pyplot(fig)
+            except Exception as e:
+                st.error(f"❌ Could not create visualizations: {str(e)}")
         st.pyplot(fig)
         
         st.divider()
         
-        # Data quality analysis for categorical
+        # Data quality analysis for categorical (skip if too many unique values)
         st.write("#### 🔍 Data Quality Analysis & Recommendations")
         
-        issues_found = []
-        issue_methods = {}
-        
-        # Check for mixed case
-        if col_data.dtype == 'object':
-            str_data = col_data.astype(str)
+        if len(value_counts) > 50:
+            st.info("💡 Quality analysis skipped for columns with >50 unique values (likely continuous numeric).")
+        else:
+            issues_found = []
+            issue_methods = {}
             
-            # Check mixed case
-            has_upper = str_data.str.contains(r'[A-Z]').any()
-            has_lower = str_data.str.contains(r'[a-z]').any()
-            
-            if has_upper and has_lower:
-                issues_found.append("Mixed case values")
-                issue_methods["Mixed case values"] = ["lowercase", "standardize"]
-            
-            # Check for leading/trailing spaces
-            has_spaces = (str_data != str_data.str.strip()).any()
-            if has_spaces:
-                issues_found.append("Leading/trailing whitespace")
-                issue_methods["Leading/trailing whitespace"] = ["trim_whitespace"]
+            # Check for mixed case
+            if col_data.dtype == 'object':
+                str_data = col_data.astype(str)
+                
+                # Check mixed case
+                has_upper = str_data.str.contains(r'[A-Z]').any()
+                has_lower = str_data.str.contains(r'[a-z]').any()
+                
+                if has_upper and has_lower:
+                    issues_found.append("Mixed case values")
+                    issue_methods["Mixed case values"] = ["lowercase", "standardize"]
+                
+                # Check for leading/trailing spaces
+                has_spaces = (str_data != str_data.str.strip()).any()
+                if has_spaces:
+                    issues_found.append("Leading/trailing whitespace")
+                    issue_methods["Leading/trailing whitespace"] = ["trim_whitespace"]
             
             # Check for duplicate spaces
             has_dup_spaces = str_data.str.contains(r' {2,}').any()
