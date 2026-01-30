@@ -978,33 +978,106 @@ def ml_predictive_analysis(df):
     """Advanced ML models for predictive analysis - EXPANDED"""
     st.write("### 🤖 ML Models & Predictive Analysis (ADVANCED)")
     
-    numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+    # DEBUG: Show available columns
+    st.write("**Available Columns in Dataset:**")
+    st.code(", ".join(df.columns.tolist()))
     
-    if len(numeric_cols) < 2:
-        st.error("Need at least 2 numeric columns")
-        return
+    # Get ALL columns for target selection (not just numeric)
+    all_cols = df.columns.tolist()
+    
+    # Try to find a column named "target" - make it the default
+    # Check both exact match and case-insensitive
+    default_target = None
+    target_index = 0
+    
+    # Exact match first
+    if "target" in all_cols:
+        default_target = "target"
+        target_index = all_cols.index("target")
+    else:
+        # Case-insensitive search
+        target_lower = [col for col in all_cols if col.lower() == "target"]
+        if target_lower:
+            default_target = target_lower[0]
+            target_index = all_cols.index(target_lower[0])
     
     st.write("#### Step 1: Choose Target Variable")
-    target = st.selectbox("Select target (Y):", numeric_cols, key="ml_target")
+    st.write("⚠️ **Tip:** Select the column you want to PREDICT")
     
-    feature_cols = [col for col in numeric_cols if col != target]
+    if default_target:
+        st.info(f"✅ Found 'target' column: '{default_target}' (using as default)")
+    
+    target = st.selectbox(
+        "Select target (Y):",
+        all_cols,
+        index=target_index,
+        key="ml_target"
+    )
+    
+    # Remove target from features
+    feature_cols = [col for col in all_cols if col != target]
     
     if not feature_cols:
-        st.error("Need at least 1 feature")
+        st.error("❌ Need at least 1 feature column (other than target)")
         return
     
     st.write("#### Step 2: Select Features")
-    selected_features = st.multiselect("Select features (X):", feature_cols, default=feature_cols, key="ml_features")
+    st.write("⚠️ **Tip:** Select columns to USE for predictions")
+    
+    selected_features = st.multiselect(
+        "Select features (X):",
+        feature_cols,
+        default=feature_cols,
+        key="ml_features"
+    )
     
     if not selected_features:
-        st.error("Select at least 1 feature")
+        st.error("❌ Select at least 1 feature")
+        return
+    
+    # Try to convert target and features to numeric
+    try:
+        y_raw = df[target].copy()
+        
+        # Try to encode categorical target
+        if y_raw.dtype == 'object':
+            y_encoded, encoding_map = pd.factorize(y_raw)
+            y = pd.Series(y_encoded, index=y_raw.index)
+            st.info(f"📝 Target '{target}' is categorical. Encoding: {dict(zip(encoding_map, range(len(encoding_map))))}")
+        else:
+            y = y_raw.astype(float)
+        
+        # Select numeric features only for ML
+        X_available = df[selected_features].select_dtypes(include=[np.number]).copy()
+        
+        if len(X_available.columns) == 0:
+            st.warning("⚠️ No numeric features found. Converting categorical features...")
+            X_available = df[selected_features].copy()
+            for col in X_available.columns:
+                if X_available[col].dtype == 'object':
+                    X_available[col], _ = pd.factorize(X_available[col])
+        
+    except Exception as e:
+        st.error(f"❌ Error processing data: {str(e)}")
         return
     
     st.write("#### Step 3: Problem Type & Models")
     col1, col2 = st.columns([1, 1])
     
     with col1:
-        problem_type = st.selectbox("Problem Type:", ["Regression", "Classification"], key="ml_type")
+        # Auto-detect problem type based on target
+        n_unique_targets = y.nunique()
+        suggested_type = "Classification" if n_unique_targets <= 20 else "Regression"
+        
+        problem_type = st.selectbox(
+            "Problem Type:",
+            ["Regression", "Classification"],
+            index=0 if suggested_type == "Regression" else 1,
+            key="ml_type"
+        )
+        
+        if suggested_type != problem_type:
+            st.warning(f"⚠️ Detected {n_unique_targets} unique values in target. Suggested: {suggested_type}")
     
     with col2:
         if problem_type == "Regression":
@@ -1026,16 +1099,23 @@ def ml_predictive_analysis(df):
     st.write("#### Step 4: Train-Test Split")
     test_size = st.slider("Test size:", 0.1, 0.5, 0.2, key="ml_test_size")
     
-    X = df[selected_features].fillna(df[selected_features].mean())
-    y = df[target].fillna(df[target].mean())
+    # Fill missing values
+    X = X_available.fillna(X_available.mean(numeric_only=True))
+    y_clean = y.fillna(y.mean())
+    
+    # Ensure same length
+    min_len = min(len(X), len(y_clean))
+    X = X.iloc[:min_len]
+    y_clean = y_clean.iloc[:min_len]
     
     # Store these for later use in explanations
     n_samples = len(X)
     n_features = X.shape[1]
     
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=test_size, random_state=42)
+    X_train, X_test, y_train, y_test = train_test_split(X, y_clean, test_size=test_size, random_state=42)
     
-    st.write(f"Training: {len(X_train)} samples | Testing: {len(X_test)} samples")
+    st.write(f"✅ Training: {len(X_train)} samples | Testing: {len(X_test)} samples")
+    st.write(f"✅ Features: {n_features} | Target: '{target}' ({y.nunique()} unique values)")
     
     st.divider()
     
