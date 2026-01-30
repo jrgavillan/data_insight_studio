@@ -2737,12 +2737,30 @@ def descriptive_stats(df):
 
 def normality_and_transform(df):
     st.write("### ✨ Normality Testing & Transformations")
-    numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
-    if not numeric_cols:
-        st.error("No numeric columns")
+    
+    # Show ALL columns, not just numeric
+    all_cols = df.columns.tolist()
+    
+    if not all_cols:
+        st.error("No columns available")
         return
-    col = st.selectbox("Select column:", numeric_cols, key="norm_col_select")
+    
+    col = st.selectbox("Select column:", all_cols, key="norm_col_select")
+    
+    # Try to convert to numeric if needed
     data = df[col].dropna()
+    
+    try:
+        # Convert to numeric if not already
+        if data.dtype == 'object':
+            data = pd.to_numeric(data, errors='coerce').dropna()
+        
+        if len(data) == 0:
+            st.error(f"❌ Column '{col}' has no numeric values or is all missing")
+            return
+    except:
+        st.error(f"❌ Could not convert '{col}' to numeric")
+        return
     st.write("#### 1️⃣ Original Data")
     original_results = test_normality(data)
     st.dataframe(pd.DataFrame(list(original_results.items()), columns=['Test', 'Result']), use_container_width=True)
@@ -2792,18 +2810,37 @@ def normality_and_transform(df):
 
 def regression_analysis(df):
     st.write("### 📉 Regression Analysis")
-    numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
-    if len(numeric_cols) < 2:
+    
+    # Show ALL columns, not just numeric
+    all_cols = df.columns.tolist()
+    
+    if len(all_cols) < 2:
         st.error("Need 2+ columns")
         return
+    
     col1, col2 = st.columns(2)
     with col1:
-        x_col = st.selectbox("X:", numeric_cols, key="reg_x_select")
+        x_col = st.selectbox("X (Feature):", all_cols, key="reg_x_select")
     with col2:
-        y_col = st.selectbox("Y:", numeric_cols, key="reg_y_select", index=min(1, len(numeric_cols)-1))
-    data_clean = df[[x_col, y_col]].dropna()
-    X = data_clean[x_col].values.reshape(-1, 1)
-    y = data_clean[y_col].values
+        y_col = st.selectbox("Y (Target):", all_cols, key="reg_y_select", index=min(1, len(all_cols)-1))
+    
+    # Convert to numeric if needed
+    try:
+        x_data = pd.to_numeric(df[x_col], errors='coerce')
+        y_data = pd.to_numeric(df[y_col], errors='coerce')
+        
+        data_clean = pd.DataFrame({'X': x_data, 'Y': y_data}).dropna()
+        
+        if len(data_clean) < 3:
+            st.error("❌ Not enough valid numeric data")
+            return
+        
+        X = data_clean['X'].values.reshape(-1, 1)
+        y = data_clean['Y'].values
+    except:
+        st.error(f"❌ Could not convert columns to numeric")
+        return
+    
     model = LinearRegression()
     model.fit(X, y)
     r_sq = model.score(X, y)
@@ -2823,12 +2860,22 @@ def regression_analysis(df):
 
 def correlation_analysis(df):
     st.write("### 📋 Correlation Analysis")
-    numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+    
+    # Convert all columns to numeric where possible
+    df_numeric = df.copy()
+    for col in df_numeric.columns:
+        if df_numeric[col].dtype == 'object':
+            df_numeric[col] = pd.to_numeric(df_numeric[col], errors='coerce')
+    
+    numeric_cols = df_numeric.select_dtypes(include=[np.number]).columns.tolist()
+    
     if len(numeric_cols) < 2:
-        st.error("Need 2+ columns")
+        st.error("Need 2+ numeric columns")
         return
-    corr = df[numeric_cols].corr()
+    
+    corr = df_numeric[numeric_cols].corr()
     st.dataframe(corr, use_container_width=True)
+    
     fig, ax = plt.subplots(figsize=(10, 8))
     sns.heatmap(corr, annot=True, fmt='.2f', cmap='coolwarm', ax=ax)
     st.pyplot(fig)
@@ -2836,37 +2883,59 @@ def correlation_analysis(df):
 
 def anova_analysis(df):
     st.write("### 📌 ANOVA Analysis")
-    numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
-    cat_cols = df.select_dtypes(include=['object']).columns.tolist()
-    if not numeric_cols or not cat_cols:
-        st.error("Need numeric + categorical")
+    
+    # Show all columns
+    all_cols = df.columns.tolist()
+    
+    if len(all_cols) < 2:
+        st.error("Need 2+ columns")
         return
+    
     col1, col2 = st.columns(2)
     with col1:
-        num_col = st.selectbox("Numeric:", numeric_cols, key="anova_num_select")
+        num_col = st.selectbox("Numeric (continuous):", all_cols, key="anova_num_select")
     with col2:
-        cat_col = st.selectbox("Category:", cat_cols, key="anova_cat_select")
-    groups = [group[num_col].dropna().values for name, group in df.groupby(cat_col)]
-    if len(groups) < 2:
-        st.error("Need 2+ groups")
-        return
-    f_stat, p_value = f_oneway(*groups)
-    results = {"F-stat": f"{f_stat:.4f}", "p-value": f"{p_value:.6f}", "Significant": "✅" if p_value < 0.05 else "❌"}
-    st.dataframe(pd.DataFrame(list(results.items()), columns=['Metric', 'Value']), use_container_width=True)
-    fig, ax = plt.subplots(figsize=(10, 6))
-    df.boxplot(column=num_col, by=cat_col, ax=ax)
-    plt.suptitle('')
-    st.pyplot(fig)
-    st.success("✅ Complete!")
+        cat_col = st.selectbox("Category (groups):", all_cols, key="anova_cat_select", index=min(1, len(all_cols)-1))
+    
+    # Convert to appropriate types
+    try:
+        df_temp = df.copy()
+        df_temp[num_col] = pd.to_numeric(df_temp[num_col], errors='coerce')
+        
+        groups = [group[num_col].dropna().values for name, group in df_temp.groupby(cat_col)]
+        if len(groups) < 2:
+            st.error("Need 2+ groups")
+            return
+        
+        f_stat, p_value = f_oneway(*groups)
+        results = {"F-stat": f"{f_stat:.4f}", "p-value": f"{p_value:.6f}", "Significant": "✅" if p_value < 0.05 else "❌"}
+        st.dataframe(pd.DataFrame(list(results.items()), columns=['Metric', 'Value']), use_container_width=True)
+        
+        fig, ax = plt.subplots(figsize=(10, 6))
+        df_temp.boxplot(column=num_col, by=cat_col, ax=ax)
+        plt.suptitle('')
+        st.pyplot(fig)
+        st.success("✅ Complete!")
+    except Exception as e:
+        st.error(f"❌ Error: {str(e)}")
 
 def clustering_analysis(df):
     st.write("### 📊 Clustering Analysis")
-    numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+    
+    # Convert all columns to numeric where possible
+    df_numeric = df.copy()
+    for col in df_numeric.columns:
+        if df_numeric[col].dtype == 'object':
+            df_numeric[col] = pd.to_numeric(df_numeric[col], errors='coerce')
+    
+    numeric_cols = df_numeric.select_dtypes(include=[np.number]).columns.tolist()
+    
     if len(numeric_cols) < 2:
-        st.error("Need 2+ columns")
+        st.error("Need 2+ numeric columns")
         return
+    
     n_clusters = st.slider("Clusters:", 2, 10, 3, key="cluster_slider")
-    X = df[numeric_cols].fillna(df[numeric_cols].mean())
+    X = df_numeric[numeric_cols].fillna(df_numeric[numeric_cols].mean())
     scaler = StandardScaler()
     X_scaled = scaler.fit_transform(X)
     kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
