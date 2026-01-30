@@ -2660,39 +2660,39 @@ def descriptive_stats(df):
                         "Select method:",
                         methods,
                         format_func=lambda x: method_names.get(x, x),
-                        key=f"fix_{col_select}_{issue}"
+                        key=f"fix_{col}_{issue}"
                     )
                     
-                    if st.button(f"✅ PREVIEW & APPLY", key=f"apply_fix_{col_select}_{issue}"):
+                    if st.button(f"✅ PREVIEW & APPLY", key=f"apply_fix_{col}_{issue}"):
                         df_temp = df.copy()
                         
                         # Apply cleaning
                         if selected_method == "lowercase":
-                            df_temp[col_select] = df_temp[col_select].astype(str).str.lower()
+                            df_temp[col] = df_temp[col].astype(str).str.lower()
                         elif selected_method == "trim_whitespace":
-                            df_temp[col_select] = df_temp[col_select].astype(str).str.strip()
+                            df_temp[col] = df_temp[col].astype(str).str.strip()
                         elif selected_method == "remove_special_chars":
-                            df_temp[col_select] = df_temp[col_select].astype(str).str.replace(r'[^\w\s]', '', regex=True).str.strip()
+                            df_temp[col] = df_temp[col].astype(str).str.replace(r'[^\w\s]', '', regex=True).str.strip()
                         elif selected_method == "remove_duplicates_spaces":
-                            df_temp[col_select] = df_temp[col_select].astype(str).str.replace(r' +', ' ', regex=True).str.strip()
+                            df_temp[col] = df_temp[col].astype(str).str.replace(r' +', ' ', regex=True).str.strip()
                         elif selected_method == "standardize":
-                            df_temp[col_select] = df_temp[col_select].astype(str).str.strip()
-                            df_temp[col_select] = df_temp[col_select].str.replace(r' +', ' ', regex=True)
-                            df_temp[col_select] = df_temp[col_select].str.lower()
-                            df_temp[col_select] = df_temp[col_select].str.replace(r'[^\w\s]', '', regex=True)
+                            df_temp[col] = df_temp[col].astype(str).str.strip()
+                            df_temp[col] = df_temp[col].str.replace(r' +', ' ', regex=True)
+                            df_temp[col] = df_temp[col].str.lower()
+                            df_temp[col] = df_temp[col].str.replace(r'[^\w\s]', '', regex=True)
                         
                         st.success("✅ Preview Generated!")
                         
                         st.write("**Before → After (First 10 rows):**")
                         preview_df = pd.DataFrame({
-                            'Original': df[col_select].head(10),
-                            'Cleaned': df_temp[col_select].head(10)
+                            'Original': df[col].head(10),
+                            'Cleaned': df_temp[col].head(10)
                         })
                         st.dataframe(preview_df, use_container_width=True, hide_index=True)
                         
                         st.info(f"✅ Method: {method_names.get(selected_method, selected_method)}")
                         
-                        if st.button(f"💾 SAVE CLEANED DATA", key=f"save_fix_{col_select}_{issue}"):
+                        if st.button(f"💾 SAVE CLEANED DATA", key=f"save_fix_{col}_{issue}"):
                             st.session_state.cleaned_df = df_temp
                             st.success(f"✅ Cleaned! Use 'Cleaned' tab or 'Use Cleaned Data for Analysis' button")
         
